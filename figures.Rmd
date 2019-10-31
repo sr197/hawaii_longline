@@ -5,6 +5,37 @@ date: "10/31/2019"
 output: html_document
 ---
 This is going to be the rmarkdown where me make the figures
+
+#load data 
 ```{r setup, include=FALSE}
 
 ```
+
+
+#Figure 1 
+Bycatch 95 % confidence envelope (observed vs. predicted bycatch) for the conditional prediction of hawaii longline data (training data). 
+
+#Figure 2 
+Heatmap of bycatch (spatially showing where bycatch is most likely to take place (can break it up by flag states and then have one total map)) 
+	6 map figures within one pane
+	This is for the RFMO data (testing data)
+	
+#Figure 3
+Month co-occurance of species (in environmental and physical space) 
+	Circular river plot for each month 
+  This is for the hawaii longline data (training data)
+
+#Figure 4 
+Table comparing GJAM non-condition and conditional to traditional methods (GLM or GAM) 
+  This is for the hawaii longline data (training data)
+
+#Figure 5 
+Bycatch reported and unreported broken down by species (either percentage or raw) 
+	In the form of a horizontal bar graph with pics 
+  This is for the RFMO data (testing data)
+  
+#Figure 6 
+Either a horizontal bar graph or a river plot with y axis representing raw bycatch, x axis representing time, each line representing a flag state, and the width representing percentage. 
+  bar graph would show reported vs unreported bycatch for each flag state (total)
+
+
