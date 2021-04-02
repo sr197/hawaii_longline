@@ -1,0 +1,38 @@
+---
+title: "Script"
+author: "Sarah Roberts"
+date: "4/2/2021"
+output: html_document
+---
+
+#Data Prep 
+##Hawaii
+```{r}
+#Load in and Prepare Data
+shallow <- read.csv("shallow.csv", na.strings=c(-9999, -9999), header = TRUE, sep = ",")
+deep <- read.csv("deep.csv", na.strings=c(-9999, -9999), header = TRUE, sep = ",")
+
+shallow <- shallow[shallow$hooks >0, ]
+deep <- deep[deep$hooks >0, ]
+
+both <- rbind(shallow, deep)
+```
+
+
+##IATTC
+
+```{r}
+
+IATTC_shark <- read.csv("PublicLLSharkNum_2004_2018.csv", na.strings=c(-9999, -9999), header = TRUE, sep = ",")
+IATTC_target <- read.csv("PublicLLTunaBillfishNum_2004_2018.csv", na.strings=c(-9999, -9999), header = TRUE, sep = ",")
+
+
+
+joined <- left_join(IATTC_target, IATTC_shark, by = c("Year", "Month", "Flag", "LatC5", "LonC5"))
+
+
+
+
+#divide by hooks to get CPUE 
+```
+
