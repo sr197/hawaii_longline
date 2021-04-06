@@ -171,7 +171,7 @@ IATTC_x <- IATTC_tot[,xnames]
 
 #2. Variable selection 
 somewhere in here, we need to put the code for how we selected the final model variables. 
-
+We know from before the most important variables for predicting hawaii. But we need to think about the most important variables for predicting IATTC. I'll start that process here
 #3. Train Hawaii 
 ##set up train and test data
 ```{r}
