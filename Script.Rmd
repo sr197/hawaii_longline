@@ -116,7 +116,49 @@ haw_dat <- cbind(haw_y, haw_x )
 
 ```
 
+###remove outliers 
+```{r}
+ydata <- haw_y
+specnames <- names(ydata)
 
+#99
+out_table <- data.frame(matrix(ncol=1, nrow=nrow(ydata)))
+
+for (i in 1:length(ydata)) { #for each species in ydata
+  dat <- as.vector(ydata[i])
+  out <- quantile(dat[,1], c(.99))
+  outliers <- as.data.frame(ifelse(dat[,1] > out, NA, dat[,1]))
+  
+  colnames(outliers) <- specnames[i]
+  out_table <- cbind(out_table, outliers)
+}
+
+out_table <- out_table[-1]                              
+total_99 <- cbind(haw_x, out_table)                              
+total_99 <- total_99[complete.cases(total_99),]
+
+#95
+out_table <- data.frame(matrix(ncol=1, nrow=nrow(ydata)))
+
+for (i in 1:length(ydata)) { #for each species in ydata
+  dat <- as.vector(ydata[i])
+  out <- quantile(dat[,1], c(.95))
+  outliers <- as.data.frame(ifelse(dat[,1] > out, NA, dat[,1]))
+  
+  colnames(outliers) <- specnames[i]
+  out_table <- cbind(out_table, outliers)
+}
+
+out_table <- out_table[-1]                              
+total_95 <- cbind(haw_x, out_table)                              
+total_95 <- total_95[complete.cases(total_95),]   
+
+
+#use 99th percentile but have the option for 95. 
+haw_y <- total_99[,specNames]
+haw_x <- total_99[,xnames]
+haw_dat <- cbind(haw_y, haw_x )
+```
 
 ##IATTC
 
@@ -141,7 +183,7 @@ joined_2 <- left_join(joined, IATTC_with_env_allyears, by = c("Year", "Month", "
 #this just showed me that IATTC_with_env_allyears and IATTC are the correct original catch data so we will use that 
 specNames <- c("ALBn", "BETn", "SKJn", "YFTn", "BUMn", "MLSn", "SFAn","SSPn","SWOn", "THRn", "BSHn", "OCSn", "MAKn", "FALn")
 
-xnames <- c("Month","Year","DEPTH.RANGE",
+xnames <- c("Month","Year","Flag", "RFMO_ID", "DEPTH.RANGE",
             "OXY.MESO","salinity.0000m.mean","surf.el.mean","water.temp.0000m.mean","aqua.CHL.chlor.a.mean")
 
 
@@ -150,6 +192,7 @@ IATTC <- readRDS("Data/Raw/IATTC.Rdata") #all IATTC data (reported catch)
 
 
 IATTC_catch <- IATTC
+IATTC_catch <- IATTC_catch[IATTC_catch$Hooks_x>0,]
 IATTC_y <- IATTC_catch[,specNames]
 IATTC_y[is.na(IATTC_y)] <- 0 #sharks are na when not reported 
 IATTC_y_cpue <- IATTC_y/IATTC_catch$Hooks_x #CPUE 
@@ -157,9 +200,8 @@ IATTC_x <- IATTC_catch[,xnames]
 
 IATTC_tot <- cbind(IATTC_y_cpue, IATTC_x)
 #remove rows with 0 hooks 
-IATTC_tot$hooks <- IATTC_catch$Hooks_x
-IATTC_tot <- IATTC_tot[IATTC_tot$hooks>0,]
-IATTC_hooks <- IATTC_catch$Hooks_x
+IATTC_tot$hooks <- IATTC_tot$Hooks_x
+IATTC_hooks <- IATTC_tot$Hooks_x
 save(IATTC_hooks, file = "Data/Processed/IATTC_hooks.Rdata")
 
 #split into x and y data 
@@ -172,6 +214,69 @@ IATTC_x <- IATTC_tot[,xnames]
 #2. Variable selection 
 somewhere in here, we need to put the code for how we selected the final model variables. 
 We know from before the most important variables for predicting hawaii. But we need to think about the most important variables for predicting IATTC. I'll start that process here
+
+##set up train and test data
+```{r}
+###1.1.2 Split into Testing and Training Data
+
+smp_size <- floor(0.80 * nrow(IATTC_y))
+set.seed(118)
+train_ind <- sample(seq_len(nrow(IATTC_y)), size = smp_size)
+
+train <- haw_dat[train_ind, ] #Model Fitting
+test <- haw_dat[-train_ind, ] #For out of Sample data
+
+specNames <- c("ALBn", "BETn", "SKJn", "YFTn", "BUMn", "MLSn", "SFAn","SSPn","SWOn", "THRn", "BSHn", "OCSn", "MAKn", "FALn")
+
+xnames <- c("Month","Year","seamount.count","MIN.DEPTH","DEPTH.MEAN","DEPTH.RANGE","MAX.DEPTH","TEMP.0M","TEMP.EPI",
+            "OXY.0M","OXY.EPI","OXY.MESO","salinity.0000m.mean","surf.el.mean","water.temp.0000m.mean","aqua.CHL.chlor.a.mean")
+
+xdata <- train[,xnames] #Model Fitting Xdata
+xdata <- as.data.frame(xdata)
+xdata$Month <- as.factor(xdata$Month)
+
+
+xx <- test[,xnames]    # holdout for prediction
+xx$Month <- as.factor(xx$Month)
+
+#the way we name these things is killing me so I'm making names that make sense to me
+haw_train_x <- xdata 
+haw_test_x <- xx 
+
+ydata <- train[,specNames]
+yy <- test[,specNames]
+
+haw_train_y <- ydata 
+haw_test_y <- yy
+
+
+```
+
+##train model
+
+```{r}
+formula <- as.formula(~water.temp.0000m.mean*aqua.CHL.chlor.a.mean + OXY.MESO * 
+                        salinity.0000m.mean + aqua.CHL.chlor.a.mean * OXY.MESO +
+                        aqua.CHL.chlor.a.mean * DEPTH.RANGE + OXY.MESO*DEPTH.RANGE +
+                        water.temp.0000m.mean*salinity.0000m.mean + 
+                        salinity.0000m.mean*aqua.CHL.chlor.a.mean)
+
+formula <- as.formula(~water.temp.0000m.mean +aqua.CHL.chlor.a.mean + OXY.MESO + 
+                        salinity.0000m.mean + DEPTH.RANGE)
+
+cdex <- c("BUMn", "MLSn", "SFAn", "SSPn", "SWOn", "ALBn", "BETn", "SKJn", "YFTn") # Condition on market ctach             # condition on 2 species
+ndex <-  c("THRn", "BSHn", "OCSn", "MAKn", "FALn") # predict bycatch
+
+ml  <- list(ng = 200, burnin = 80, typeNames = 'CA')#, effort = effort)#, effort = effort) # fit the non-holdouts
+ml$REDUCT <- FALSE
+x <- model.matrix(formula, xdata)
+qr(x)$rank
+dim(x)
+
+out<- gjam(formula = formula, haw_train_x, haw_train_y, modelList = ml)
+save(out, file = "Models/trained_hawaii.rdata")
+```
+
 #3. Train Hawaii 
 ##set up train and test data
 ```{r}
@@ -233,6 +338,7 @@ dim(x)
 
 out<- gjam(formula = formula, haw_train_x, haw_train_y, modelList = ml)
 save(out, file = "Models/trained_hawaii.rdata")
+load("Models/trained_hawaii.rdata")
 ```
 
 
@@ -897,7 +1003,7 @@ p <- ggplot()  + geom_point(data = dat, aes(x = pred,y = obs), size = .2, color 
   theme_Publication() +
   labs(colour = "+/- 1 SD") + 
   xlim(c(0,max(yp)/10)) + ylim(c(0,max(yp)/10))+  
-  theme(aspect.ratio = 1) + labs(y = expression(paste("Predicted shark catch (Individuals/1000 hooks)"^"1/2")), x = expression(paste("Reported shark catch (Individuals/1000 hooks)"^"1/2")),title="HPLF Model Validation")
+  theme(aspect.ratio = 1) + labs(y = expression(paste("Predicted shark catch (CPUE)")), x = expression(paste("Reported shark catch (CPUE)"),title="HPLF Model Validation"))
 
 # HAWAII SHARKS - PREDICTED ON X # 
 yp = haw_test_y[,ndex] # just reversed these so "yp" is actually observed, not predicted. annoying to read but quickest way to do it
@@ -956,7 +1062,7 @@ pp <- ggplot()  + geom_point(data = dat, aes(x = obs,y = pred), size = .2, color
   annotate(geom="text", color = "red", x=2.5, y=4.7, label=paste0("Mean =", round(meany, digits = 2))) + 
   xlim(c(0,max(yp)/10)) + ylim(c(0,max(yp)/10))+ 
   theme(aspect.ratio = 1) + 
-  labs(x = expression(paste("Predicted shark catch (Individuals/1000 hooks)"^"1/2")), y = expression(paste("Recorded shark catch (Individuals/1000 hooks)"^"1/2")),title="HPLF Model Validation") 
+  labs(x = expression(paste("Predicted shark catch (CPUE)")), y = expression(paste("Recorded shark catch (CPUE)"),title="HPLF Model Validation"))
 
 
 ggarrange(p, pp, common.legend = TRUE, legend = "bottom")+ ggsave(filename= "Figures/FigureS2.jpg", plot=last_plot(), width = 25, height=15, units=c("cm"), dpi=500)
@@ -1030,7 +1136,7 @@ ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color
   annotate(geom="text", color = "red", x=max(dat$yp)/2, y=max(dat$yp), label=paste0("RMSPE =", round(rmseval, digits = 2))) + 
   annotate(geom="text", color = "red", x=max(dat$yp)/2, y=max(dat$yp)-(max(dat$yp)/10), label=paste0("Mean =", round(meany, digits = 2))) + 
   theme(aspect.ratio = 1) +
-  labs(y = expression(paste("Predicted catch (Individuals/1000 hooks)"^"1/2")), x = expression(paste("Reported catch (Individuals/1000 hooks)"^"1/2")),title=name)
+  labs(y = expression(paste("Predicted catch (CPUE)")), x = expression(paste("Reported catch (CPUE)")),title=name)
 #ggsave(ploty, file=paste0("plot_", i,".jpg"), width = 10, height=10, units=c("cm"), dpi=500)
 plot_list[[i]] <- ploty
 }
@@ -1069,7 +1175,7 @@ ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color
   annotate(geom="text", color = "red", x=max(dat$yp)/2, y=max(dat$yp), label=paste0("RMSPE =", round(rmseval, digits = 2))) + 
   annotate(geom="text", color = "red", x=max(dat$yp)/2, y=max(dat$yp)-(max(dat$yp)/10), label=paste0("Mean =", round(meany, digits = 2))) + 
   theme(aspect.ratio = 1) +
-  labs(y = expression(paste("Predicted catch (Individuals/1000 hooks)"^"1/2")), x = expression(paste("Reported catch (Individuals/1000 hooks)"^"1/2")),title=name)
+  labs(y = expression(paste("Predicted catch (CPUE)")), x = expression(paste("Reported catch (CPUE)")),title=name)
 #ggsave(ploty, file=paste0("plot_", i,".jpg"), width = 10, height=10, units=c("cm"), dpi=500)
 plot_list[[i]] <- ploty
 }
@@ -1098,19 +1204,17 @@ for(i in 1:length(steps)){
 yp = p3$sdList$yMu[,namey]
 dat <- cbind(yo, yp)
 dat <- as.data.frame(dat)
-rmseval2 <- Metrics::rmse(actual = dat$obs, predicted = dat$pred) #to put on the graph
-meany2 <- mean(dat$obs) #to put on the graph
-rmseval <- Metrics::rmse(actual = df$x, predicted = df$y) #to put on the graph
-meany <- mean(df$y) #to put on the graph
+rmseval <- Metrics::rmse(actual = dat$yo, predicted = dat$yp) #to put on the graph
+meany <- mean(dat$yo) #to put on the graph
 ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "grey50", alpha = .3)+
   geom_abline(linetype=2) +  
   theme_Publication() + 
   xlim(c(0,max(dat$yp)/5))+ 
   ylim(c(0,max(dat$yp)/5)) + 
-  annotate(geom="text", color = "red", x=max(dat$yp)/5, y=max(dat$yp)/8, label=paste0("RMSPE =", round(rmseval, digits = 2))) + 
-  annotate(geom="text", color = "red", x=max(dat$yp)/5, y=max(dat$yp)-(max(dat$yp)/10), label=paste0("Mean =", round(meany, digits = 2))) + 
+  annotate(geom="text", color = "red", x=max(dat$yp)/10, y=max(dat$yp)/8, label=paste0("RMSPE =", round(rmseval, digits = 2))) + 
+  annotate(geom="text", color = "red", x=max(dat$yp)/10, y=(max(dat$yp)/10), label=paste0("Mean =", round(meany, digits = 2))) + 
   theme(aspect.ratio = 1) +
-  labs(y = expression(paste("Predicted catch (Individuals/1000 hooks)"^"1/2")), x = expression(paste("Reported catch (Individuals/1000 hooks)"^"1/2")),title=name)
+  labs(y = expression(paste("Predicted catch (CPUE)")), x = expression(paste("Reported catch (CPUE)")),title=name)
 #ggsave(ploty, file=paste0("plot_", i,".jpg"), width = 10, height=10, units=c("cm"), dpi=500)
 plot_list[[i]] <- ploty
 }
