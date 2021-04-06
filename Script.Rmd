@@ -5,34 +5,1116 @@ date: "4/2/2021"
 output: html_document
 ---
 
-#Data Prep 
+Overview: 
+
+This code does the following 
+ANALYSIS: 
+1. Loads in Hawaii and IATTC catch data, converts to catch per hook. 
+2. Selects the best set of variables for predicting hawaii CPUE based on teh environment. 
+3. Trains a gjam model with the selected variables on 80% of hawaii, tests on the remaining 20%.
+  - Out of sample conditional and unconditional prediction for sharks 
+  - Out of sample unconditional prediction for target species (to test if the model works well)
+4. Trains that same model on the entire hawaii dataset 
+5. Predicts IATTC target catch to see how well the model works on IATTC data that we trust 
+6. Conditionally predict bycatch sharks given target catch. This is the main section of the results. Here we also calculate the difference between reported/observed and predicted CPUE 
+7. Save all of the data files we created. 
+
+FIGURES: 
+1. Reported vs. predicted target catch/bycatch ratio for IATTC and hawaii 
+2. Done in arcmap and powerpoint (study design)
+3. GJAM results 
+4. Predicted underreporting of sharks by country (a) and species (b). 
+
+#0 Packages 
+```{r}
+library(gjam)
+library(dplyr) #for data manipulation
+library(tidyr)#for data manipulation
+library(tidyverse)#for data manipulation
+library(Metrics) #for RMSPE 
+
+library(scales)#for mapping
+library(ggplot2)#for figures
+library(biscale)#for bivariate
+library(cowplot) #for drawing figures
+library(ggthemes) #plotting colors
+library(ggpubr) #plotting colors
+source("https://raw.githubusercontent.com/imaddowzimet/drawcrosshatch/master/draw_crosshatch.R") 
+library("wesanderson")  #plotting colors
+if(!require(devtools)) install.packages("devtools")
+devtools::install_github("kassambara/ggcorrplot", force = TRUE)
+library(ggcorrplot)#for gjam output figures
+library(corrplot)#for gjam output figures
+library(lessR)#for gjam output figures
+```
+#ANALYSIS
+#1. Data Prep 
 ##Hawaii
 ```{r}
 #Load in and Prepare Data
-shallow <- read.csv("shallow.csv", na.strings=c(-9999, -9999), header = TRUE, sep = ",")
-deep <- read.csv("deep.csv", na.strings=c(-9999, -9999), header = TRUE, sep = ",")
+shallow <- read.csv("Data/Raw/shallow.csv", na.strings=c(-9999, -9999), header = TRUE, sep = ",")
+deep <- read.csv("Data/Raw/deep.csv", na.strings=c(-9999, -9999), header = TRUE, sep = ",")
+
+#it looks like that is in CPUE and the X column is actually hooks? 
+
 
 shallow <- shallow[shallow$hooks >0, ]
 deep <- deep[deep$hooks >0, ]
 
 both <- rbind(shallow, deep)
+
+
+for(i in 1:ncol(both)){
+  both[i] <- as.numeric((both[,i]))
+}
+
+colnames(both) <- gsub("_", ".", colnames(both))
+
+# rename ydata columns to fit with IATTC names
+both$ALBn <- both$ALB
+both$BETn <- both$BET
+both$SKJn <- both$SKJ
+both$YFTn <- both$YFT
+both$BUMn <- both$BLM
+both$MLSn <- both$STM
+both$SFAn <- both$SAI
+both$SSPn <- both$SPE
+both$SWOn <- both$SWO
+both$BSHn <- both$BLU
+both$FALn <- both$SLK
+both$MAKn <- both$MAK #Combine both IATTC MAKOs 
+both$OCSn <- both$OWT
+both$THRn <- both$BIG
+both$DOLn <- both$DOL
+both$ESCn <- both$ESC
+both$LANn <- both$LAN
+both$OPAn <- both$OPA
+both$POMn <- both$POM
+both$CROn <- both$CRO
+both$SNAn <- both$SNA
+both$STGn <- both$STG
+both$WAHn <- both$WAH
+haw_dat <- both
+hooks <- haw_dat$hooks 
+save(hooks, file = "Data/Processed/haw_hooks.rdata")
+coords <- haw_dat %>% dplyr::select(LAT, LON)
+save(coords, file = "Data/Processed/Hawaii_Coordinates.rdata")
+save(haw_dat, file = "Data/Processed/Haw_all") #catch 
+
+
+#get out CPUE 
+specNames <- c("ALBn", "BETn", "SKJn", "YFTn", "BUMn", "MLSn", "SFAn","SSPn","SWOn", "THRn", "BSHn", "OCSn", "MAKn", "FALn")
+
+xnames <- c("Month","Year","seamount.count","MIN.DEPTH","DEPTH.MEAN","DEPTH.RANGE","MAX.DEPTH","TEMP.0M","TEMP.EPI",
+            "OXY.0M","OXY.EPI","OXY.MESO","salinity.0000m.mean","surf.el.mean","water.temp.0000m.mean","aqua.CHL.chlor.a.mean")
+
+haw_y <- haw_dat[,specNames]
+haw_y <- haw_y/haw_dat$hooks
+
+haw_x <- haw_dat[,xnames]
+haw_dat <- cbind(haw_y, haw_x )
+
 ```
+
 
 
 ##IATTC
 
 ```{r}
 
-IATTC_shark <- read.csv("PublicLLSharkNum_2004_2018.csv", na.strings=c(-9999, -9999), header = TRUE, sep = ",")
-IATTC_target <- read.csv("PublicLLTunaBillfishNum_2004_2018.csv", na.strings=c(-9999, -9999), header = TRUE, sep = ",")
+IATTC_shark <- read.csv("Data/Raw/PublicLLSharkNum_2004_2018.csv", na.strings=c(-9999, -9999), header = TRUE, sep = ",")
+IATTC_target <- read.csv("Data/Raw/PublicLLTunaBillfishNum_2004_2018.csv", na.strings=c(-9999, -9999), header = TRUE, sep = ",")
 
 
 
 joined <- left_join(IATTC_target, IATTC_shark, by = c("Year", "Month", "Flag", "LatC5", "LonC5"))
 
+##whenever there is NA in sharks I guess we make it 0 because none were reported 
+
+#test to see if the same as data I have 
+
+IATTC_with_env_allyears <- read.csv("Data/Raw/IATTC_with_env_allyears.csv")
+
+joined_2 <- left_join(joined, IATTC_with_env_allyears, by = c("Year", "Month", "Flag", "LatC5", "LonC5"))
 
 
+#this just showed me that IATTC_with_env_allyears and IATTC are the correct original catch data so we will use that 
+specNames <- c("ALBn", "BETn", "SKJn", "YFTn", "BUMn", "MLSn", "SFAn","SSPn","SWOn", "THRn", "BSHn", "OCSn", "MAKn", "FALn")
 
-#divide by hooks to get CPUE 
+xnames <- c("Month","Year","DEPTH.RANGE",
+            "OXY.MESO","salinity.0000m.mean","surf.el.mean","water.temp.0000m.mean","aqua.CHL.chlor.a.mean")
+
+
+#there are some x values missing. we need to add those back in based on IATTC 
+IATTC <- readRDS("Data/Raw/IATTC.Rdata") #all IATTC data (reported catch) 
+
+
+IATTC_catch <- IATTC
+IATTC_y <- IATTC_catch[,specNames]
+IATTC_y[is.na(IATTC_y)] <- 0 #sharks are na when not reported 
+IATTC_y_cpue <- IATTC_y/IATTC_catch$Hooks_x #CPUE 
+IATTC_x <- IATTC_catch[,xnames]
+
+IATTC_tot <- cbind(IATTC_y_cpue, IATTC_x)
+#remove rows with 0 hooks 
+IATTC_tot$hooks <- IATTC_catch$Hooks_x
+IATTC_tot <- IATTC_tot[IATTC_tot$hooks>0,]
+IATTC_hooks <- IATTC_catch$Hooks_x
+save(IATTC_hooks, file = "Data/Processed/IATTC_hooks.Rdata")
+
+#split into x and y data 
+IATTC_y <- IATTC_tot[,specNames]
+IATTC_x <- IATTC_tot[,xnames]
+
+#checkit - I think I need to get RFMO_ID and flag in here too. 
 ```
 
+#2. Variable selection 
+somewhere in here, we need to put the code for how we selected the final model variables. 
+
+#3. Train Hawaii 
+##set up train and test data
+```{r}
+###1.1.2 Split into Testing and Training Data
+
+smp_size <- floor(0.80 * nrow(haw_dat))
+set.seed(118)
+train_ind <- sample(seq_len(nrow(haw_dat)), size = smp_size)
+
+train <- haw_dat[train_ind, ] #Model Fitting
+test <- haw_dat[-train_ind, ] #For out of Sample data
+
+specNames <- c("ALBn", "BETn", "SKJn", "YFTn", "BUMn", "MLSn", "SFAn","SSPn","SWOn", "THRn", "BSHn", "OCSn", "MAKn", "FALn")
+
+xnames <- c("Month","Year","seamount.count","MIN.DEPTH","DEPTH.MEAN","DEPTH.RANGE","MAX.DEPTH","TEMP.0M","TEMP.EPI",
+            "OXY.0M","OXY.EPI","OXY.MESO","salinity.0000m.mean","surf.el.mean","water.temp.0000m.mean","aqua.CHL.chlor.a.mean")
+
+xdata <- train[,xnames] #Model Fitting Xdata
+xdata <- as.data.frame(xdata)
+xdata$Month <- as.factor(xdata$Month)
+
+
+xx <- test[,xnames]    # holdout for prediction
+xx$Month <- as.factor(xx$Month)
+
+#the way we name these things is killing me so I'm making names that make sense to me
+haw_train_x <- xdata 
+haw_test_x <- xx 
+
+ydata <- train[,specNames]
+yy <- test[,specNames]
+
+haw_train_y <- ydata 
+haw_test_y <- yy
+
+
+```
+
+##train model
+
+```{r}
+formula <- as.formula(~water.temp.0000m.mean*aqua.CHL.chlor.a.mean + OXY.MESO * 
+                        salinity.0000m.mean + aqua.CHL.chlor.a.mean * OXY.MESO +
+                        aqua.CHL.chlor.a.mean * DEPTH.RANGE + OXY.MESO*DEPTH.RANGE +
+                        water.temp.0000m.mean*salinity.0000m.mean + 
+                        salinity.0000m.mean*aqua.CHL.chlor.a.mean)
+
+formula <- as.formula(~water.temp.0000m.mean +aqua.CHL.chlor.a.mean + OXY.MESO + 
+                        salinity.0000m.mean + DEPTH.RANGE)
+
+cdex <- c("BUMn", "MLSn", "SFAn", "SSPn", "SWOn", "ALBn", "BETn", "SKJn", "YFTn") # Condition on market ctach             # condition on 2 species
+ndex <-  c("THRn", "BSHn", "OCSn", "MAKn", "FALn") # predict bycatch
+
+ml  <- list(ng = 200, burnin = 80, typeNames = 'CA')#, effort = effort)#, effort = effort) # fit the non-holdouts
+ml$REDUCT <- FALSE
+x <- model.matrix(formula, xdata)
+qr(x)$rank
+dim(x)
+
+out<- gjam(formula = formula, haw_train_x, haw_train_y, modelList = ml)
+save(out, file = "Models/trained_hawaii.rdata")
+```
+
+
+### In sample model
+plotting gjams plots to see how the in sample model predicts the data and what variables are important etc. 
+```{r}
+
+# Plots
+specColor <- as.character()
+specColor[c("BUMn", "MLSn", "SFAn", "SSPn", "SWOn", "ALBn", "BETn", "SKJn", "YFTn")] <- "blue" #market
+specColor[c("THRn", "BSHn", "OCSn", "MAKn", "FALn")] <- "orange" #bycatch
+
+plotPars <- list(PLOTALLY = T, SMALLPLOTS = T, GRIDPLOTS = T, 
+                 SAVEPLOTS = FALSE, specColor = specColor)
+gjamPlot(out, plotPars = plotPars)
+```
+
+###out of sample prediction 
+conditional and unconditional prediction on hawaii 
+```{r}
+# xx, yy are new data
+# Generate Conditional Prediction out-of-sample
+newdata <- list(xdata = haw_test_x, ydataCond = haw_test_y[,cdex], nsim = 1000) # conditionally predict out-of-sample
+p2      <- gjamPredict(output = out, newdata = newdata)
+
+#predict unconditionally, out-of-sample
+newdata2   <- list(xdata = haw_test_x, nsim = 1000) 
+p1 <- gjamPredict(out, newdata = newdata2)
+
+save(p2, file = "Results/p2.rdata")
+save(p1, file = "Results/p1.rdata")
+```
+
+
+
+
+
+#4. Run final model on entire hawaii dataset 
+```{r}
+
+cdex <- c("BUMn", "MLSn", "SFAn", "SSPn", "SWOn", "ALBn", "BETn", "SKJn", "YFTn") # Condition on market ctach             # condition on 2 species
+ndex <-  c("THRn", "BSHn", "OCSn", "MAKn", "FALn") # predict bycatch
+
+ml  <- list(ng = 10000, burnin = 1000, typeNames = 'CA')#, effort = effort)#, effort = effort) # fit the non-holdouts
+ml$REDUCT <- FALSE
+ml$random <- "Month"
+
+haw_x <- rbind(haw_train_x, haw_test_x)
+haw_y <- rbind(haw_train_y, haw_test_y)
+out<- gjam(formula = formula, haw_x, haw_y, modelList = ml)
+save(out, file = "Models/full_hawaii.rdata")
+```
+
+#5. Predict IATTC unconditional all data 
+This is a test to see how well the model fits on the IATTC data 
+```{r}
+#predict unconditionally, out-of-sample IATTC
+newdata2   <- list(xdata = IATTC_x, nsim = 1000) 
+p3 <- gjamPredict(out, newdata = newdata2)
+save(p3, file = "Results/p3.rdata")
+```
+
+#6. Predict IATTC conditional bycatch 
+This is the main reults of the paper. Conditionally predict bycatch based on target catch 
+
+```{r}
+cdex <- c("BUMn", "MLSn", "SFAn", "SSPn", "SWOn", "ALBn", "BETn", "SKJn", "YFTn") # Condition on market ctach
+# Generate Conditional Prediction out-of-sample
+newdata <- list(xdata = IATTC_x, ydataCond = IATTC_y[,cdex], nsim = 1000) # conditionally predict out-of-sample
+p4      <- gjamPredict(output = out, newdata = newdata)
+save(p4, file = "Results/p4.rdata")
+```
+
+##difference between observed and predicted
+```{r}
+IATTC_pred <- p4[["sdList"]][["yMu"]]
+IATTC_rep <- IATTC_y
+
+IATTC_pred <- IATTC_pred*IATTC_hooks 
+IATTC_rep <- IATTC_rep*IATTC_hooks 
+
+IATTC_Catch_difference <- IATTC_pred - IATTC_rep #large numbers mean high underreporting
+write.csv(IATTC_Catch_difference, "IATTC_Catch_difference.csv")
+```
+
+
+
+#7. Save data files 
+```{r}
+save(haw_train_x, file = "Data/Processed/haw_train_x.rdata")
+save(haw_train_y, file = "Data/Processed/haw_train_y.rdata")
+save(haw_test_x, file = "Data/Processed/haw_test_x.rdata")
+save(haw_test_y, file = "Data/Processed/haw_test_y.rdata")
+
+save(IATTC_x, file = "Data/Processed/IATTC_x.rdata")
+save(IATTC_y, file = "Data/Processed/IATTC_y.rdata")
+
+```
+
+
+#FIGURES 
+
+##load data 
+```{r}
+haw_train_x <- readRDS("Data/Processed/haw_train_x.rdata") # Hawaii Training Data (covariates) previously xdata 
+haw_train_y <- readRDS("Data/Processed/haw_train_y.rdata") # Hawaii Training Data (fish in CPUE) previously ydata 
+haw_test_x <- readRDS("Data/Processed/haw_test_x.rdata") # Hawaii Testing Data (covariates) previously xx 
+haw_test_y <- readRDS("Data/Processed/haw_test_y.rdata") # Hawaii Testing Data (fish in CPUE) previously yy 
+haw_hooks <- readRDS("Data/Processed/haw_hooks.rdata") # hawaii hooks for converting data
+Hawaii_coordinates <- readRDS("Data/Processed/Hawaii_Coordinates.Rdata")
+haw_all <-  readRDS("Data/Processed/Haw_all") #All hawaii data in original catch (not CPUE )
+
+p1 <- readRDS("Results/p1.Rdata") # Hawaii out-of-sample Un-conditional Prediction
+p2 <- readRDS("Results/p2.Rdata") # Hawaii out-of-sample Conditional Prediction
+p3 <- readRDS("Results/p3.Rdata") # IATTC unconditional prediction
+p4 <- readRDS("Results/p4.Rdata") # IATTC conditional prediction (CPUE)
+                          #  p4[["sdList"]][["yMu"]] to get out individual specis predictions
+
+
+IATTC_x <- readRDS("Data/Processed/IATTC_x.rdata") # IATTC Data (covariates) previously xxx
+IATTC_y <- readRDS("Data/Processed/IIATTC_y.rdata") # IATTC Data (fish in CPUE) previously yyy
+IATTC <- readRDS("Data/Raw/IATTC.Rdata") #all IATTC data (original reported catch not CPUE) 
+IATTC_with_env_allyears <- read.csv("Data/Raw/IATTC_with_env_allyears.csv") #just to get out spatial info 
+IATTC_spat <- IATTC_with_env_allyears %>% dplyr::select(LatC5, LonC5,RFMO_ID)
+IATTC_RFMO <- readRDS("Data/Raw/IATTC_RFMO.Rdata") #RFMO ID data 
+IATTC_hooks <- readRDS("Data/Processed/IIATTC_hooks.rdata")
+
+#these will change 
+IATTC_pred <- read.csv("IATTC_Total_Bycatch.csv") #all IATTC prediction (catch)
+
+IATTC_diff_CPUE <- read.csv("IATTC_Catch_difference.csv") #IATTC difference in catch 
+IATTC_CPUE_rep <- read.csv("IATTC_Catch_Reported.csv") #IATTC reporeted in catch
+IATTC_CPUE_est <- read.csv("IATTC_Catch_Estimated.csv") #IATTC predicted in catchE
+
+
+#this is for mapping 
+world <- ne_countries(scale = "medium", returnclass = "sf") #world shapefile
+
+```
+
+
+##setup theme
+```{r}
+
+theme_Publication <- function(base_size=12, base_family="Helvetica") {
+
+      (theme_foundation(base_size=base_size, base_family=base_family)
+       + theme(plot.title = element_text(face = "bold",
+                                         size = rel(1.2), hjust = 0.5),
+               text = element_text(),
+               panel.background = element_rect(colour = NA),
+               plot.background = element_rect(colour = NA),
+               panel.border = element_rect(colour = NA),
+               axis.title = element_text(face = "bold",size = rel(1)),
+               axis.title.y = element_text(angle=90,vjust =2),
+               axis.title.x = element_text(vjust = -0.2),
+               axis.text = element_text(), 
+               axis.line = element_line(colour="black"),
+               axis.ticks = element_line(),
+               panel.grid.major = element_line(colour="#f0f0f0"),
+               panel.grid.minor = element_blank(),
+               legend.key = element_rect(colour = NA),
+               legend.position = "bottom",
+               legend.direction = "horizontal",
+               legend.key.size= unit(0.5, "cm"),
+               legend.margin = unit(0, "cm"),
+               legend.title = element_text(face="italic"),
+               plot.margin=unit(c(10,5,5,5),"mm"),
+               strip.background=element_rect(colour="#f0f0f0",fill="#f0f0f0"),
+               strip.text = element_text(face="bold")
+          ))
+      
+}
+pal <- wes_palette("Zissou1", 50, type = "continuous")
+
+```
+
+
+#Figure 1 
+predicted and reported target to bycatch ratio for both IATTC and hawaii 
+Right now I have it in CPUE but we can also uncomment the lines multiplying by hooks to get it in catch. 
+##reported datasets. 
+```{r}
+##make datasets 
+yyy <- IATTC_y
+#yyy <- IATTC_y*IATTC_hooks
+#IATTC
+marketnames <- c("BUMn", "MLSn", "SFAn", "SSPn", "SWOn", "ALBn", "BETn", "SKJn", "YFTn")
+market_IATTC <- yyy[colnames(yyy) %in% marketnames]
+#bycatchnames <- c("DOLn", "ESCn", "LANn", "THRn", "BSHn", "CROn","OCSn", "MAKn", "FALn", "SNAn", "STGn", "WAHn", "OPAn", "POMn")
+bycatchnames <- bycatchnames <- c("THRn", "BSHn", "OCSn", "MAKn", "FALn")
+bycatch_IATTC <- yyy[colnames(yyy) %in% bycatchnames]
+
+#create total market and total bycatch columns 
+market_IATTC$total_market <- rowSums(market_IATTC)
+bycatch_IATTC$total_bycatch <- rowSums(bycatch_IATTC)
+
+
+#greate one dataframe 
+IATTC2 <- data.frame(total_market=market_IATTC$total_market, total_bycatch = bycatch_IATTC$total_bycatch, year = IATTC_x$Year)
+#get rid of infs (actually 0s )
+IATTC2[IATTC2=="Inf"] <- 0
+
+#remove years where no market or bycatch species were caught (540 rows)
+IATTC2 <- subset(IATTC2, IATTC2$total_bycatch + IATTC2$total_market > 0)
+
+
+
+#HAWAII
+
+y_haw <- haw_all[,specNames]
+#y_haw <- y_haw*hooks
+
+market_HAW <- y_haw[colnames(y_haw) %in% marketnames]
+bycatch_HAW <- y_haw[colnames(y_haw) %in% bycatchnames]
+
+#create total market and total bycatch columns 
+market_HAW$total_market <- rowSums(market_HAW)
+bycatch_HAW$total_bycatch <- rowSums(bycatch_HAW)
+
+
+#greate one dataframe 
+HAW2 <- data.frame(total_market=market_HAW$total_market, total_bycatch = bycatch_HAW$total_bycatch, year = haw_all$Year)
+
+```
+
+##predicted datasets 
+```{r}
+IATTC_CPUE_est <- as.data.frame(p4[["sdList"]][["yMu"]])
+#yyy <- IATTC_CPUE_est*IATTC_hooks
+
+#IATTC
+marketnames <- c("BUMn", "MLSn", "SFAn", "SSPn", "SWOn", "ALBn", "BETn", "SKJn", "YFTn")
+market_IATTC <- yyy[colnames(yyy) %in% marketnames]
+#bycatchnames <- c("DOLn", "ESCn", "LANn", "THRn", "BSHn", "CROn","OCSn", "MAKn", "FALn", "SNAn", "STGn", "WAHn", "OPAn", "POMn")
+bycatchnames <- bycatchnames <- c("THRn", "BSHn", "OCSn", "MAKn", "FALn")
+bycatch_IATTC <- yyy[colnames(yyy) %in% bycatchnames]
+
+#create total market and total bycatch columns 
+market_IATTC$total_market <- rowSums(market_IATTC)
+bycatch_IATTC$total_bycatch <- rowSums(bycatch_IATTC)
+
+
+
+#greate one dataframe 
+IATTC_est2 <- data.frame(total_market=market_IATTC$total_market, total_bycatch = bycatch_IATTC$total_bycatch, year = IATTC_CPUE_est$Year)
+#get rid of infs (actually 0s )
+IATTC_est2[IATTC_est2=="Inf"] <- 0
+
+#remove years where no market or bycatch species were caught (540 rows)
+IATTC_est2 <- subset(IATTC_est2, IATTC_est2$total_bycatch + IATTC_est2$total_market > 0)
+IATTC_est22 <- IATTC_est2 %>% group_by(year) %>% summarise_all(list(mean))
+
+IATTC_est22$IATTC_ratioest <- IATTC_est22$total_bycatch/IATTC_est22$total_market
+# get some Inf for those that weren't reoprted so will change to 0
+
+
+#hawaii pred 
+haw_pred <- as.data.frame(p2[["sdList"]][["yMu"]])
+#haw_pred <- haw_pred*haw_hooks
+
+marketnames <- c("BUMn", "MLSn", "SFAn", "SSPn", "SWOn", "ALBn", "BETn", "SKJn", "YFTn")
+market_haw <- yyy[colnames(yyy) %in% marketnames]
+
+bycatch_haw <- yyy[colnames(yyy) %in% bycatchnames]
+
+#create total market and total bycatch columns 
+market_haw$total_market <- rowSums(market_haw)
+bycatch_haw$total_bycatch <- rowSums(bycatch_haw)
+
+
+#greate one dataframe 
+haw_est2 <- data.frame(total_market=market_haw$total_market, total_bycatch = bycatch_haw$total_bycatch, year = xx$Year)
+#get rid of infs (actually 0s )
+haw_est2[haw_est2=="Inf"] <- 0
+
+#remove years where no market or bycatch species were caught (540 rows)
+haw_est2 <- subset(haw_est2, haw_est2$total_bycatch + haw_est2$total_market > 0)
+haw_est22 <- haw_est2 %>% group_by(year) %>% summarise_all(list(mean))
+
+haw_est22$hawratio_est <- haw_est22$total_bycatch/haw_est22$total_market
+# get some Inf for those that weren't reoprted so will change to 0
+
+#plot
+
+#IATTC
+#group by year 
+IATTC22 <- IATTC2 %>% group_by(year) %>% summarise_all(list(mean))
+IATTC22[IATTC22=="Inf"] <- 0
+IATTC22$IATTCratio_rep <- IATTC22$total_bycatch/IATTC22$total_market
+# get some Inf for those that weren't reoprted so will change to 0
+
+
+#HAW
+#group by year 
+HAW22 <- HAW2 %>% group_by(year) %>% summarise_all(list(mean))
+bycatch_HAW[bycatch_HAW =="Inf"] <- 0
+
+#get ratio
+HAW22$hawratio_rep <- HAW22$total_bycatch/HAW22$total_market
+
+ratios <- left_join(HAW22, IATTC22, by=c("year"))
+ratios <- left_join(ratios, IATTC_est22, by=c("year"))
+ratios <- left_join(ratios, haw_est22, by=c("year"))
+
+ratios <- ratios %>% dplyr::select(year, hawratio_est, IATTC_ratioest, IATTCratio_rep, hawratio_rep)
+
+ratioMelted <- reshape2::melt(ratios, id.var='year')
+
+ggplot(ratioMelted, aes(x=year, y=value, group=variable)) + geom_line(aes(color=variable, linetype = variable)) + scale_color_manual(values=c("#d65cad", 'black', 'black', "#d65cad")) + scale_linetype_manual(values=c("twodash", "twodash", "solid", "solid")) + ylab("Oceanic sharks / Pelagic finfish") +xlab("Year") +theme(panel.background = element_rect(fill = "white"), axis.line = element_line(size = .2, colour = "black"), legend.position = "none")
+
+ggsave(filename= "Figure1.jpg", plot=last_plot(), width = 4, height=4, units=c("in"), dpi=500)
+
+```
+
+#Figure 2
+Made in arcmap and powerpoint 
+
+#Figure 3 
+Model covariance results 
+
+```{r}
+out <- readRDS("out_June_1.rdata")
+out <- readRDS("Models/out_July_21.rdata")
+#lets plot things out 
+```
+
+##b-c. 
+```{r}
+
+betas <- out$parameters$betaStandXTable
+sens <- out[["parameters"]][["sensTable"]]
+rmsetot <- out[["fit"]][["rmspeAll"]]
+DIC <- out[["fit"]][["DIC"]]
+rmse_byspec <- out[["fit"]][["rmspeBySpec"]] 
+cor <- out[["parameters"]][["corMu"]] #modeled co-occurence 
+colnames(cor) <- colnames(out[["parameters"]][["corSe"]])
+s_mat <- out[["parameters"]][["sigMu"]]
+#add cor from ydata for panel A
+ycor <- out[["inputs"]][["y"]]
+
+
+
+cor <- corReorder(cor, order = "manual", vars=c(SWOn, MAKn, ALBn, BSHn, SFAn, YFTn, BETn, MLSn, OCSn, SKJn, THRn, FALn, BUMn, SSPn))
+
+cor <-  as.data.frame(cor) %>% rename("Albacore" = ALBn,  "Bigeye tuna" = BETn, "Skipjack" = SKJn, "Yellowfin" = YFTn, "Blue marlin" = BUMn,"Striped marlin" =  MLSn, "Sailfish" = SFAn, "Spearfish" = SSPn, "Swordfish" = SWOn, "Thresher shark" = THRn, "Blue shark" = BSHn, "Oceanic whitetip" = OCSn, "Makos" = MAKn, "Silky shark" = FALn)
+rownames(cor) <- colnames(cor)
+
+
+s_mat <- corReorder(s_mat, order = "manual", vars=c(SWOn, MAKn, ALBn, BSHn, SFAn, YFTn, BETn, MLSn, OCSn, SKJn, THRn, FALn, BUMn, SSPn))
+
+s_mat <-  as.data.frame(s_mat) %>% rename("Albacore" = ALBn,  "Bigeye tuna" = BETn, "Skipjack" = SKJn, "Yellowfin" = YFTn, "Blue marlin" = BUMn,"Striped marlin" =  MLSn, "Sailfish" = SFAn, "Spearfish" = SSPn, "Swordfish" = SWOn, "Thresher shark" = THRn, "Blue shark" = BSHn, "Oceanic whitetip" = OCSn, "Makos" = MAKn, "Silky shark" = FALn)
+rownames(s_mat) <- colnames(s_mat)
+
+
+
+ggcorrplot::ggcorrplot(s_mat, type = "lower")+ scale_fill_gradient2(low = "blue", mid = "white", high = "red", breaks=c(0), limit=c(-10, 10)) + theme(axis.text.x = element_text(angle = 90, vjust = 1, hjust = 1))+ scale_x_discrete(breaks = NULL)
+
+
+ycor <- cor(ycor, method = "spearman")
+ycor <- corReorder(ycor, order = "manual", vars=c(SWOn, MAKn, ALBn, BSHn, SFAn, YFTn, BETn, MLSn, OCSn, SKJn, THRn, FALn, BUMn, SSPn))
+
+ycor <-  as.data.frame(ycor) %>% rename("Albacore" = ALBn,  "Bigeye tuna" = BETn, "Skipjack" = SKJn, "Yellowfin" = YFTn, "Blue marlin" = BUMn,"Striped marlin" =  MLSn, "Sailfish" = SFAn, "Spearfish" = SSPn, "Swordfish" = SWOn, "Thresher shark" = THRn, "Blue shark" = BSHn, "Oceanic whitetip" = OCSn, "Makos" = MAKn, "Silky shark" = FALn)
+rownames(ycor) <- colnames(ycor)
+
+
+cor2 <- out[["parameters"]][["ematrix"]]
+cor2 <- corReorder(cor2, order = "manual", vars=c(SWOn, MAKn, ALBn, BSHn, SFAn, YFTn, BETn, MLSn, OCSn, SKJn, THRn, FALn, BUMn, SSPn))
+
+cor2 <-  as.data.frame(cor2) %>% rename("Albacore" = ALBn,  "Bigeye tuna" = BETn, "Skipjack" = SKJn, "Yellowfin" = YFTn, "Blue marlin" = BUMn,"Striped marlin" =  MLSn, "Sailfish" = SFAn, "Spearfish" = SSPn, "Swordfish" = SWOn, "Thresher shark" = THRn, "Blue shark" = BSHn, "Oceanic whitetip" = OCSn, "Makos" = MAKn, "Silky shark" = FALn)
+rownames(cor2) <- colnames(cor2)
+
+
+cl<- c("#56A36C","#5E8579","#77C34F","#2E68AA","#7E884F","#7C8489","#4fB3A4","#F5B977")
+
+col2 <- colorRampPalette(cl)
+
+cor <- as.matrix(cor)
+
+co_colors <- c("black", "red", "black", "red", "black", "black", "black", "black", "red","black", "red","red", "black","black")
+
+co_colors2 <-c("red", "black", "red", "black", "black", "black", "black", "red", "black", "red","red", "black")
+
+#co-occurence in ydata 
+ggcorrplot::ggcorrplot(ycor, type = "lower")+ scale_fill_gradient2(low = "blue", mid = "white", high = "red", breaks=c(0), limit=c(-1, 1))+
+    theme(axis.text.y = element_text(colour = co_colors)) +
+    theme(axis.text.x = element_text(colour = co_colors2)) + theme(axis.text.x = element_text(angle = 90, vjust = 1, hjust = 1), panel.grid.major.x = element_blank())+ ggsave(filename= "Figure3c.jpg", plot=last_plot(), width = 12, height=12, units=c("cm"), dpi=500)
+
+
+
+#co-occurence modeled
+ggcorrplot::ggcorrplot(cor, type = "lower")+ scale_fill_gradient2(low = "blue", mid = "white", high = "red", breaks=c(0), limit=c(-1, 1))+
+    theme(axis.text.y = element_text(colour = co_colors)) +
+    theme(axis.text.x = element_text(colour = co_colors2))+ theme(axis.text.x = element_text(angle = 90, vjust = 1, hjust = 1), panel.grid.major.x = element_blank())+ ggsave(filename= "Figure3d.jpg", plot=last_plot(), width = 12, height=12, units=c("cm"), dpi=500)
+
+#ematrix
+
+ggcorrplot::ggcorrplot(cor2, type = "lower") + scale_fill_gradient2(low = "blue", mid = "white", high = "red", breaks=c(0), limit=c(-1.5, 1.5))+
+    theme(axis.text.y = element_text(colour = co_colors)) +
+    theme(axis.text.x = element_text(colour = co_colors2))+ theme(axis.text.x = element_text(angle = 90, vjust = 1, hjust = 1), panel.grid.major.x = element_blank()) + ggsave(filename= "Figure3b.jpg", plot=last_plot(), width = 12, height=12, units=c("cm"), dpi=500)
+
+ggcorrplot::ggcorrplot(cor2) + scale_fill_gradient2(low = "blue", mid = "white", high = "red", breaks=c(0), limit=c(-1.5, 1.5))+ theme(axis.text.x = element_text(angle = 90, vjust = 1, hjust = 1), panel.grid.major.x = element_blank())
+
+
+
+#difference 
+dif_cor <- cor - ycor
+ggcorrplot::ggcorrplot(dif_cor, type = "lower", legend.title = "modeled - observed \nco-occurrence")+ theme(axis.text.x = element_text(angle = 90, vjust = 1, hjust = 1), panel.grid.major.x = element_blank())
+
+```
+##a. betas
+Lets try making a tile plot with the beta matrix 
+
+```{r}
+betas_tidy <- betas 
+betas_tidy$variable <- rownames(betas_tidy)
+betas_tidy <- betas_tidy %>% separate(variable, c("species","variable"), sep = "([_])")
+
+betas_tidy$species <- factor(betas_tidy$species, levels=c("SWOn", "MAKn", "ALBn", "BSHn", "SFAn", "YFTn", "BETn", "MLSn", "OCSn", "SKJn", "THRn", "FALn", "BUMn", "SSPn"))
+
+betas_tidy <- betas_tidy %>% mutate(species = recode(species, ALBn = "Albacore",  BETn = "Bigeye tuna", SKJn = "Skipjack", YFTn = "Yellowfin",  BUMn = "Blue marlin",MLSn = "Striped marlin", SFAn = "Sailfish", SSPn = "Spearfish", SWOn = "Swordfish", THRn = "Thresher shark", BSHn = "Blue shark", OCSn = "Oceanic whitetip", MAKn = "Makos", FALn = "Silky shark")) %>% filter(variable != "intercept")
+
+betas_tidy <- betas_tidy %>% mutate(variable = recode(variable, "water.temp.0000m.mean" = "SST", "aqua.CHL.chlor.a.mean" = "CHLA", "salinity.0000m.mean" = "SAL", "water.temp.0000m.mean:aqua.CHL.chlor.a.mean" = "SST:CHLA", "OXY.MESO:salinity.0000m.mean" = "OXY.MESO:SAL", "aqua.CHL.chlor.a.mean:OXY.MESO"= "CHLA:OXY.MESO", "aqua.CHL.chlor.a.mean:DEPTH.RANGE" = "CHLA:DEPTH.RANGE", "water.temp.0000m.mean:salinity.0000m.mean" = "SST:SAL", "aqua.CHL.chlor.a.mean:salinity.0000m.mean" = "CHLA:SAL"))
+
+
+betas_tidy$variable <- factor(betas_tidy$variable, levels=c("SST", "SAL", "OXY.MESO", "SST:SAL", "CHLA", "CHLA:SAL", "OXY.MESO:SAL", "OXY.MESO:DEPTH.RANGE", "CHLA:OXY.MESO", "CHLA:DEPTH.RANGE", "DEPTH.RANGE", "SST:CHLA"))
+
+bynames <- c("Makos", "Blue shark", "Oceanic whitetip", "Thresher shark", "Silky shark")
+beta_colors <- c("black", "black", "red", "red", "black", "red", "black", "black", "black", "red","black", "red","black")
+
+beta_colors <-c("black", "red", "black", "red", "black", "black", "black", "black", "red","black", "red","red", "black","black")
+
+ggplot(data = betas_tidy, aes(x=variable, y=species, fill=Estimate)) + 
+  geom_tile() + scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+   midpoint = 0, space = "Lab", 
+   name="Betas") +
+    theme(axis.text.y = element_text(colour = beta_colors)) + theme(axis.text.x = element_text(angle = 90, size = 15, vjust = 1, hjust = 1), axis.text.y = element_text(size = 15))+ ggsave(filename= "Figure3a.jpg", plot=last_plot(), width = 15, height=15, units=c("cm"), dpi=500)
+
+
+```
+
+#Figure 4
+##a line by country
+```{r}
+IATTC_diff_catch <- read.csv("IATTC_Catch_difference.csv")
+IATTC_with_env_allyears <- read.csv("IATTC_with_env_allyears.csv")
+IATTC_with_env_allyears$lon <- IATTC_with_env_allyears$LonC5
+IATTC_with_env_allyears$lat <- IATTC_with_env_allyears$LatC5
+IATTC_spat <- IATTC_with_env_allyears %>% dplyr::select(lat, lon, RFMO_ID, Flag, Year)
+
+IATTC_diff_catch <- left_join(IATTC_diff_catch, IATTC_spat, by=c("RFMO_ID"))
+bycatchnames <- c("THRn", "BSHn", "OCSn", "MAKn", "FALn")
+
+IATTC_diff_bycatch <- IATTC_diff_catch[colnames(IATTC_diff_catch) %in% bycatchnames]
+
+
+IATTC_diff_bycatch$tot_diff <- rowSums(IATTC_diff_bycatch)
+
+IATTC_diff_bycatch$flag <- IATTC_diff_catch$Flag
+IATTC_diff_bycatch$year <- IATTC_diff_catch$Year
+
+
+IATTC_diff_flag <- IATTC_diff_bycatch %>% group_by(flag, year) %>% summarise_all(sum, na.rm=TRUE)
+IATTC_diff_line <- IATTC_diff_flag %>% gather("spp", "diff", 3:8)
+
+IATTC_diff_flag2 <- IATTC_diff_bycatch %>% group_by(flag) %>% summarise_all(sum, na.rm=TRUE)
+
+IATTC_diff_flag %>% 
+  ggplot() +
+    geom_line(aes(x=year, y=(tot_diff), color=flag), size = 1.2) + theme(panel.background = element_rect(fill = "white", colour = "black"))+ scale_x_continuous(breaks = scales::pretty_breaks(10)) + scale_color_manual(values = c("#006ba4", "#ff800e", "#ababab", "#595959", "#5f9ed1", "#c85200", "#898989", "#ffbc79", "#873f0e", "#8ab8e3")) +geom_text(data = IATTC_diff_flag %>% filter(flag != "CHN", year == first(year)), aes(label = flag, 
+                                                           x = year + -.5, 
+                                                           y = tot_diff, 
+                                                           color = flag, 
+                                                           fontface = "bold")) +geom_text(data = IATTC_diff_flag %>% filter(flag == "CHN", year==last(year)), aes(label = flag, 
+                                                           x = year + -.5, 
+                                                           y = tot_diff+50000, 
+                                                           color = flag, 
+                                                           fontface = "bold"))+
+    theme(legend.position="none")+ 
+  ggsave(filename= "Figure4a.jpg", plot=last_plot(), width = 20, height=15, units=c("cm"), dpi=500)
+
+
+#different pallete 
+IATTC_diff_flag %>% 
+  ggplot() +
+    geom_line(aes(x=year, y=(tot_diff), color=flag), size = 1.2) + 
+  theme(panel.background = element_rect(fill = "white", colour = "black"))+ 
+  scale_x_continuous(breaks = scales::pretty_breaks(10)) + 
+  scale_color_manual(values = c("#006ba4", "#595959", "#d62728", "#9467bd", "#8c564b", "#ff7f0e", "#7f7f7f", "#bcbd22", "#17becf", "#e377c2")) +
+  geom_text(data = IATTC_diff_flag %>% 
+              filter(flag != "CHN", year == first(year)), aes(label = flag, 
+                                                              x = year + -.5,  
+                                                              y = tot_diff, 
+                                                              color = flag, 
+                                                              fontface = "bold")) +
+  geom_text(data = IATTC_diff_flag %>% 
+              filter(flag == "CHN", year==last(year)), aes(label = flag, 
+                                                           x = year + -.5, 
+                                                           y = tot_diff+50000, 
+                                                           color = flag, 
+                                                           fontface = "bold"))+
+    theme(legend.position="bottom")
+
+```
+
+
+
+##bar plots 
+```{r}
+IATTC_with_env_allyears <- read.csv("~/Documents/Longline/hawaii/RFMO/IATTC_with_env_allyears.csv")
+IATTC_with_env_allyears$lon <- IATTC_with_env_allyears$LonC5
+IATTC_with_env_allyears$lat <- IATTC_with_env_allyears$LatC5
+IATTC_spat <- IATTC_with_env_allyears %>% dplyr::select(lat, lon,RFMO_ID)
+
+IATTC_diff_CPUE <- read.csv("IATTC_Catch_difference.csv")
+IATTC_CPUE_rep <- read.csv("IATTC_Catch_Reported.csv")
+IATTC_CPUE_est <- read.csv("IATTC_Catch_Estimated.csv")
+
+IATTC_diff_CPUE <- left_join(IATTC_diff_CPUE, IATTC_spat, by=c("RFMO_ID"))
+IATTC_CPUE_rep <- left_join(IATTC_CPUE_rep, IATTC_spat, by=c("RFMO_ID"))
+IATTC_CPUE_est <- left_join(IATTC_CPUE_est, IATTC_spat, by=c("RFMO_ID"))
+
+bycatchnames <- c("DOLn", "ESCn", "LANn", "THRn", "BSHn", "CROn","OCSn", "MAKn", "FALn", "SNAn", "STGn", "WAHn", "OPAn", "POMn")
+iucnnames <- c("THRn", "BSHn", "OCSn", "MAKn", "FALn")
+marketnames <- c("BUMn", "MLSn", "SFAn", "SSPn", "SWOn", "ALBn", "BETn", "SKJn", "YFTn")
+
+
+#bar plot
+IATTC_bycatch_rep <- IATTC_CPUE_rep[colnames(IATTC_CPUE_rep) %in% iucnnames]
+IATTC_bycatch_est <- IATTC_CPUE_est[colnames(IATTC_CPUE_est) %in% iucnnames]
+IATTC_bycatch_rep$total_catch <- rowSums(IATTC_bycatch_rep)
+IATTC_bycatch_est$total_catch <- rowSums(IATTC_bycatch_est)
+
+IATTC_bycatch_rep$flag <- IATTC_CPUE_rep$Flag
+IATTC_bycatch_est$flag <- IATTC_CPUE_est$Flag
+
+
+rep <- IATTC_bycatch_rep %>% gather("spp", "catch", 1:6)
+
+rep[rep=="Inf"] <- NA
+
+
+rep <- rep %>% group_by(flag, spp) %>% summarise(catch = sum(catch, na.rm=T))
+
+est <- IATTC_bycatch_est %>% gather("spp", "catch", 1:6)
+est[est=="Inf"] <- NA
+
+est <- est %>% group_by(flag, spp) %>% summarise(catch = sum(catch, na.rm=T))
+
+rep$status <- "reported"
+est$status <- "estimated"
+
+IATCC_bar <- rbind(rep, est)
+
+
+
+ggplot(data=IATCC_bar, aes(x=flag, y=catch, fill=status)) + geom_bar(position="dodge2", stat="identity")+
+  facet_wrap(~spp, scales = "free") + scale_fill_manual(values = c("darkblue", "orange")) +
+theme(panel.background = element_rect(fill = "white", colour = "black"))+ theme(strip.background = element_rect(fill = "white", colour = "black"))+ theme(axis.text.x = element_text(angle = 90))
+
+options(scipen=10000)
+#layed out in two columns
+ggplot(data=IATCC_bar, aes(x=flag, y=catch, fill=status)) + geom_bar(position="dodge2", stat="identity")+
+  facet_wrap(~spp, scales= "free", ncol=2) + scale_fill_manual(values = c("darkblue", "orange")) +
+theme(panel.background = element_rect(fill = "white", colour = "black"))+ theme(strip.background = element_rect(fill = "white", colour = "black"))+ theme(axis.text.x = element_text(angle = 90))+
+    theme(legend.position="bottom") + 
+  ggsave(filename= "bar_plot_flipped.jpg", plot=last_plot(), width = 4.6, height=6, units=c("in"), dpi=500)
+
+
+#new colors 
+IATCC_bar <- IATCC_bar %>% mutate(status =  recode(status, estimated = "predicted" ))
+ggplot(data=IATCC_bar, aes(x=flag, y=catch, fill=status)) + geom_bar(position="dodge2", stat="identity")+
+  facet_wrap(~spp, scales= "free", ncol=2) + scale_fill_manual(values = c( "#c46487", "#2cb5c0")) +
+theme(panel.background = element_rect(fill = "white", colour = "black"))+ theme(strip.background = element_rect(fill = "white", colour = "black"))+ theme(axis.text.x = element_text(angle = 90))+
+    theme(legend.position="bottom") + theme(legend.title = element_blank())+ 
+  ggsave(filename= "bar_plot_flipped.jpg", plot=last_plot(), width = 4.6, height=6.6, units=c("in"), dpi=500)
+
+```
+try making the bar plot with the scales changed (so anything over X is considered the same for silky, mako and thresher)
+
+```{r}
+IATCC_bar <- rbind(rep, est)
+
+#set limits 
+IATCC_bar$catch <- ifelse(IATCC_bar$spp == "FALn" & IATCC_bar$catch>50000, 10000, IATCC_bar$catch ) 
+
+IATCC_bar$catch <- ifelse(IATCC_bar$spp == "THRn" & IATCC_bar$catch>600000, 200000, IATCC_bar$catch ) 
+
+
+options(scipen=10000)
+#layed out in two columns
+ggplot(data=IATCC_bar, aes(x=flag, y=catch, fill=status)) + geom_bar(position="dodge2", stat="identity")+
+  facet_wrap(~spp, scales= "free", ncol=2) + scale_fill_manual(values = c("darkblue", "orange")) +
+theme(panel.background = element_rect(fill = "white", colour = "black"))+ theme(strip.background = element_rect(fill = "white", colour = "black"))+ theme(axis.text.x = element_text(angle = 90))+
+    theme(legend.position="bottom")
+ggsave(filename= "bar_plot.jpg", plot=last_plot(), width = 4.6, height=6, units=c("in"), dpi=500)
+
+
+#flipped
+ggplot(data=IATCC_bar, aes(x=flag, y=catch, fill=status)) + geom_bar(position="dodge2", stat="identity")+
+  facet_wrap(~spp, scales= "free", ncol=2) + scale_fill_manual(values = c( "orange","darkblue")) +
+theme(panel.background = element_rect(fill = "white", colour = "black"))+ theme(strip.background = element_rect(fill = "white", colour = "black"))+ theme(axis.text.x = element_text(angle = 90))+
+    theme(legend.position="bottom")
+ggsave(filename= "bar_plot_flipped.jpg", plot=last_plot(), width = 4.6, height=6, units=c("in"), dpi=500)
+```
+
+
+#S2 Obs vs Predicted hawaii
+###hawaii bycatch (all)
+```{r}
+# HAWAII SHARKS - REPORTED ON X # 
+ndex <- c("THRn", "BSHn", "OCSn", "MAKn", "FALn")
+yo = haw_test_y[,ndex]
+yp = p2$sdList$yMu[,ndex]
+obs <- (rowMeans(yo))
+pred <- (rowMeans(yp))
+dat <- cbind(obs, pred)
+dat <-as.data.frame(dat)
+xlim = NULL
+ylim = NULL
+if(is.data.frame(yo))yo <- as.matrix(yo) 
+if(is.data.frame(yp))yp <- as.matrix(yp) 
+yo <- as.vector(yo)
+yp <- as.vector(yp)
+yo <- sqrt(yo)
+yp <- sqrt(yp)
+bins <- quantile(yo, c(.0001, .9999), na.rm=T)
+bins <- seq(bins[1], bins[2], length=50)
+xbin <- findInterval(yo, bins, all.inside = T)
+ww   <- which( table(xbin) < 20 )
+if(length(ww) > 0){
+  bins <- bins[-ww]
+  xbin <- findInterval(yo, bins, all.inside = T)
+}
+ibin <- findInterval(yo, bins, all.inside = T)
+mu   <- tapply( yp, ibin, mean)
+mids <- (bins[-length(bins)] + bins[-1])/2
+nb <- length(mids)
+mids <- mids[-nb]
+mu   <- mu[-nb]
+if(length(mu) != length(mids)){# not the same length
+  mids = mids[1:length(mu)]
+} 
+if(is.null(ylim))ylim <- c(0, max(yp))
+if(is.null(xlim))xlim <- c(0, 1.1*max(mids))
+# calculate quantiles along x axis (yp)
+qq   <- tapply( yp, ibin, quantile, pnorm(c(-1.96, -1, 1, 1.96)) )
+qq   <- matrix( unlist(qq), ncol = 4, byrow=T)
+qq   <- qq[-nb,]
+#qq variables hold data ranges like so: qq[,1] = 95% min, qq[,2] = 68% min, qq[,3] = 68% max, qq[,4] = 98% max
+# set up a dataframe for plotting
+df <- data.frame(x = mids,
+                 y = mu,
+                 ymin = qq[,2],
+                 ymax = qq[,3])
+
+p <- ggplot()  + geom_point(data = dat, aes(x = pred,y = obs), size = .2, color = "grey50", alpha = .3) +
+  geom_point(data = df,aes(x = x,y = y, colour=(ymax-ymin)/2)) + 
+  # geom_errorbar(data = df,aes(x = x,y = y, ymin = ymin,ymax = ymax,width=0.1,colour = ((ymax-ymin)/2))) + 
+  geom_abline(linetype=2) + 
+  scale_color_gradientn(colours = pal) +  
+  theme_Publication() +
+  labs(colour = "+/- 1 SD") + 
+  xlim(c(0,max(yp)/10)) + ylim(c(0,max(yp)/10))+  
+  theme(aspect.ratio = 1) + labs(y = expression(paste("Predicted shark catch (Individuals/1000 hooks)"^"1/2")), x = expression(paste("Reported shark catch (Individuals/1000 hooks)"^"1/2")),title="HPLF Model Validation")
+
+# HAWAII SHARKS - PREDICTED ON X # 
+yp = haw_test_y[,ndex] # just reversed these so "yp" is actually observed, not predicted. annoying to read but quickest way to do it
+yo = p2$sdList$yMu[,ndex]
+xlim = NULL
+ylim = NULL
+if(is.data.frame(yo))yo <- as.matrix(yo) 
+if(is.data.frame(yp))yp <- as.matrix(yp) 
+yo <- as.vector(yo)
+yp <- as.vector(yp)
+yo <- sqrt(yo)
+yp <- sqrt(yp)
+bins <- quantile(yo, c(.0001, .9999), na.rm=T)
+bins <- seq(bins[1], bins[2], length=50)
+xbin <- findInterval(yo, bins, all.inside = T)
+ww   <- which( table(xbin) < 20 )
+if(length(ww) > 0){
+  bins <- bins[-ww]
+  xbin <- findInterval(yo, bins, all.inside = T)
+}
+ibin <- findInterval(yo, bins, all.inside = T)
+mu   <- tapply( yp, ibin, mean)
+mids <- (bins[-length(bins)] + bins[-1])/2
+nb <- length(mids)
+mids <- mids[-nb]
+mu   <- mu[-nb]
+if(length(mu) != length(mids)){# not the same length
+  mids = mids[1:length(mu)]
+} 
+if(is.null(ylim))ylim <- c(0, max(yp))
+if(is.null(xlim))xlim <- c(0, 1.1*max(mids))
+# calculate quantiles along x axis (yp)
+qq   <- tapply( yp, ibin, quantile, pnorm(c(-1.96, -1, 1, 1.96)) )
+qq   <- matrix( unlist(qq), ncol = 4, byrow=T)
+qq   <- qq[-nb,]
+#qq variables hold data ranges like so: qq[,1] = 95% min, qq[,2] = 68% min, qq[,3] = 68% max, qq[,4] = 98% max
+# set up a dataframe for plotting
+
+
+df <- data.frame(x = mids,
+                 y = mu,
+                 ymin = qq[,2],
+                 ymax = qq[,3])
+rmseval <- Metrics::rmse(actual = dat$obs, predicted = dat$pred) #to put on the graph
+meany <- mean(dat$obs) #to put on the graph
+rmseval2 <- Metrics::rmse(actual = df$x, predicted = df$y) #to put on the graph
+meany2 <- mean(df$y) #to put on the graph
+pp <- ggplot()  + geom_point(data = dat, aes(x = obs,y = pred), size = .2, color = "grey50", alpha = .3) +
+  # geom_point(data = df,aes(x = x,y = y, colour=(ymax-ymin)/2)) + 
+  # geom_errorbar(data = df,aes(x = x,y = y, ymin = ymin,ymax = ymax,width=0.1,colour = ((ymax-ymin)/2))) + 
+  geom_abline(linetype=2) + 
+  scale_color_gradientn(colours = pal) +  
+  theme_Publication()+
+  labs(colour = "+/- 1 SD") +
+  annotate(geom="text", color = "red", x=2.5, y=5, label=paste0("RMSPE =", round(rmseval, digits = 2))) + 
+  annotate(geom="text", color = "red", x=2.5, y=4.7, label=paste0("Mean =", round(meany, digits = 2))) + 
+  xlim(c(0,max(yp)/10)) + ylim(c(0,max(yp)/10))+ 
+  theme(aspect.ratio = 1) + 
+  labs(x = expression(paste("Predicted shark catch (Individuals/1000 hooks)"^"1/2")), y = expression(paste("Recorded shark catch (Individuals/1000 hooks)"^"1/2")),title="HPLF Model Validation") 
+
+
+ggarrange(p, pp, common.legend = TRUE, legend = "bottom")+ ggsave(filename= "Figures/FigureS2.jpg", plot=last_plot(), width = 25, height=15, units=c("cm"), dpi=500)
+```
+
+###bycatch loop 
+```{r}
+steps<- c("Thresher shark", "Blue shark", "Oceanic whitetip", "Mako sharks", "Silky shark")
+
+ndex <- c("THRn", "BSHn", "OCSn", "MAKn", "FALn")
+
+plot_list = list()
+
+for(i in 1:length(steps)){
+  name <- steps[i]
+  namey <- ndex[i]
+  yo = haw_test_y[,namey]
+yp = p2$sdList$yMu[,namey]
+dat <- cbind(yo, yp)
+xlim = NULL
+ylim = NULL
+if(is.data.frame(yo))yo <- as.matrix(yo) 
+if(is.data.frame(yp))yp <- as.matrix(yp) 
+yo <- as.vector(yo)
+yp <- as.vector(yp)
+yo <- sqrt(yo)
+yp <- sqrt(yp)
+bins <- quantile(yo, c(.0001, .9999), na.rm=T)
+bins <- seq(bins[1], bins[2], length=50)
+xbin <- findInterval(yo, bins, all.inside = T)
+ww   <- which( table(xbin) < 20 )
+if(length(ww) > 0){
+  bins <- bins[-ww]
+  xbin <- findInterval(yo, bins, all.inside = T)
+}
+ibin <- findInterval(yo, bins, all.inside = T)
+mu   <- tapply( yp, ibin, mean)
+mids <- (bins[-length(bins)] + bins[-1])/2
+nb <- length(mids)
+mids <- mids[-nb]
+mu   <- mu[-nb]
+if(length(mu) != length(mids)){# not the same length
+  mids = mids[1:length(mu)]
+} 
+if(is.null(ylim))ylim <- c(0, max(yp))
+if(is.null(xlim))xlim <- c(0, 1.1*max(mids))
+# calculate quantiles along x axis (yp)
+qq   <- tapply( yp, ibin, quantile, pnorm(c(-1.96, -1, 1, 1.96)) )
+qq   <- matrix( unlist(qq), ncol = 4, byrow=T)
+qq   <- qq[-nb,]
+#qq variables hold data ranges like so: qq[,1] = 95% min, qq[,2] = 68% min, qq[,3] = 68% max, qq[,4] = 98% max
+# set up a dataframe for plotting
+df <- data.frame(x = mids,
+                 y = mu,
+                 ymin = qq[,2],
+                 ymax = qq[,3])
+dat <- as.data.frame(dat)
+rmseval <- Metrics::rmse(actual = dat$obs, predicted = dat$pred) #to put on the graph
+meany <- mean(dat$obs) #to put on the graph
+rmseval2 <- Metrics::rmse(actual = df$x, predicted = df$y) #to put on the graph
+meany2 <- mean(df$y) #to put on the graph
+ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "grey50", alpha = .3) +
+  # geom_point(data = df,aes(x = x,y = y, colour=(ymax-ymin)/2)) + 
+  # geom_errorbar(data = df,aes(x = x,y = y, ymin = ymin,ymax = ymax,width=0.1,colour = ((ymax-ymin)/2))) + 
+  geom_abline(linetype=2) + 
+  scale_color_gradientn(colours = pal) +  
+  theme_Publication() + 
+  xlim(c(0,max(dat$yp)))+ 
+  ylim(c(0,max(dat$yp)))+
+  labs(colour = "+/- 1 SD") + 
+  annotate(geom="text", color = "red", x=max(dat$yp)/2, y=max(dat$yp), label=paste0("RMSPE =", round(rmseval, digits = 2))) + 
+  annotate(geom="text", color = "red", x=max(dat$yp)/2, y=max(dat$yp)-(max(dat$yp)/10), label=paste0("Mean =", round(meany, digits = 2))) + 
+  theme(aspect.ratio = 1) +
+  labs(y = expression(paste("Predicted catch (Individuals/1000 hooks)"^"1/2")), x = expression(paste("Reported catch (Individuals/1000 hooks)"^"1/2")),title=name)
+#ggsave(ploty, file=paste0("plot_", i,".jpg"), width = 10, height=10, units=c("cm"), dpi=500)
+plot_list[[i]] <- ploty
+}
+
+
+do.call(ggarrange, c(plot_list[1:length(plot_list)], common.legend = TRUE, legend = "bottom"))+ ggsave(filename= "Figures/FigureS4a.jpg", plot=last_plot(), width = 30, height=25, units=c("cm"), dpi=500)
+```
+
+###all unconditional 
+This is to make sure that the model does an okay job at predicting target species in hawaii (will be doing this on IATTC as well)
+
+```{r}
+
+steps<- c("Albacore", "Bigeye Tuna", "Skipjack", "Yellowfin", " Blue Marlin", "Striped Marlin", "Sailfish", "Spearfish", "Swordfish", "Thresher shark", "Blue shark", "Oceanic whitetip", "Mako sharks", "Silky shark")
+
+adex <- c("ALBn", "BETn", "SKJn", "YFTn", "BUMn", "MLSn", "SFAn","SSPn","SWOn", "THRn", "BSHn", "OCSn", "MAKn", "FALn")
+
+plot_list = list()
+
+for(i in 1:length(steps)){
+  name <- steps[i]
+  namey <- adex[i]
+  yo = haw_test_y[,namey]
+yp = p1$sdList$yMu[,namey]
+dat <- cbind(yo, yp)
+dat <- as.data.frame(dat)
+rmseval2 <- Metrics::rmse(actual = dat$obs, predicted = dat$pred) #to put on the graph
+meany2 <- mean(dat$obs) #to put on the graph
+rmseval <- Metrics::rmse(actual = df$x, predicted = df$y) #to put on the graph
+meany <- mean(df$y) #to put on the graph
+ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "grey50", alpha = .3) + 
+  geom_abline(linetype=2) +  
+  theme_Publication() + 
+  xlim(c(0,max(dat$yp)))+ 
+  ylim(c(0,max(dat$yp))) + 
+  annotate(geom="text", color = "red", x=max(dat$yp)/2, y=max(dat$yp), label=paste0("RMSPE =", round(rmseval, digits = 2))) + 
+  annotate(geom="text", color = "red", x=max(dat$yp)/2, y=max(dat$yp)-(max(dat$yp)/10), label=paste0("Mean =", round(meany, digits = 2))) + 
+  theme(aspect.ratio = 1) +
+  labs(y = expression(paste("Predicted catch (Individuals/1000 hooks)"^"1/2")), x = expression(paste("Reported catch (Individuals/1000 hooks)"^"1/2")),title=name)
+#ggsave(ploty, file=paste0("plot_", i,".jpg"), width = 10, height=10, units=c("cm"), dpi=500)
+plot_list[[i]] <- ploty
+}
+
+
+do.call(ggarrange, c(plot_list[1:length(cdex)], common.legend = TRUE, legend = "bottom"))+ ggsave(filename= "Figures/FigureS_unconditional_outofsample_haw.jpg", plot=last_plot(), width = 30, height=25, units=c("cm"), dpi=500)
+```
+
+#SX Observed vs. predicted IATTC
+
+###target unconditional 
+This is to make sure that the model does an okay job at predicting target species IATTC 
+
+```{r}
+
+steps<- c("Albacore", "Bigeye Tuna", "Skipjack", "Yellowfin", " Blue Marlin", "Striped Marlin", "Sailfish", "Spearfish", "Swordfish")
+
+cdex <- c("ALBn", "BETn", "SKJn", "YFTn", "BUMn", "MLSn", "SFAn","SSPn","SWOn")
+
+plot_list = list()
+
+for(i in 1:length(steps)){
+  name <- steps[i]
+  namey <- cdex[i]
+  yo = IATTC_y[,namey]
+yp = p3$sdList$yMu[,namey]
+dat <- cbind(yo, yp)
+dat <- as.data.frame(dat)
+rmseval2 <- Metrics::rmse(actual = dat$obs, predicted = dat$pred) #to put on the graph
+meany2 <- mean(dat$obs) #to put on the graph
+rmseval <- Metrics::rmse(actual = df$x, predicted = df$y) #to put on the graph
+meany <- mean(df$y) #to put on the graph
+ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "grey50", alpha = .3)+
+  geom_abline(linetype=2) +  
+  theme_Publication() + 
+  xlim(c(0,max(dat$yp)/5))+ 
+  ylim(c(0,max(dat$yp)/5)) + 
+  annotate(geom="text", color = "red", x=max(dat$yp)/5, y=max(dat$yp)/8, label=paste0("RMSPE =", round(rmseval, digits = 2))) + 
+  annotate(geom="text", color = "red", x=max(dat$yp)/5, y=max(dat$yp)-(max(dat$yp)/10), label=paste0("Mean =", round(meany, digits = 2))) + 
+  theme(aspect.ratio = 1) +
+  labs(y = expression(paste("Predicted catch (Individuals/1000 hooks)"^"1/2")), x = expression(paste("Reported catch (Individuals/1000 hooks)"^"1/2")),title=name)
+#ggsave(ploty, file=paste0("plot_", i,".jpg"), width = 10, height=10, units=c("cm"), dpi=500)
+plot_list[[i]] <- ploty
+}
+
+
+do.call(ggarrange, c(plot_list[1:length(plot_list)], common.legend = TRUE, legend = "bottom"))+ ggsave(filename= "Figures/FigureS_unconditional_outofsample_IATTC.jpg", plot=last_plot(), width = 30, height=25, units=c("cm"), dpi=500)
+```
