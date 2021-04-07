@@ -151,11 +151,9 @@ for (i in 1:length(ydata)) { #for each species in ydata
 
 out_table <- out_table[-1]                              
 total_95 <- cbind(haw_x, out_table)                              
-<<<<<<< HEAD
-total_95 <- total_95[complete.cases(total_95),]  #if its NA its an outlier. remove those rows 
-=======
+
 total_95 <- total_95[complete.cases(total_95),]   
->>>>>>> cb46f25e272cf488ef91736b25218b609a4dbc13
+
 
 
 #use 99th percentile but have the option for 95. 
