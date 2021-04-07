@@ -1227,6 +1227,7 @@ ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color
 plot_list[[i]] <- ploty
 }
 
+#figs
 
 do.call(ggarrange, c(plot_list[1:length(plot_list)], common.legend = TRUE, legend = "bottom"))+ ggsave(filename= "Figures/1000/FigureS_unconditional_outofsample_IATTC.jpg", plot=last_plot(), width = 30, height=25, units=c("cm"), dpi=500)
 ```
