@@ -154,7 +154,7 @@ total_95 <- cbind(haw_x, out_table)
 
 total_95 <- total_95[complete.cases(total_95),]   
 
-
+#add in 
 
 #use 99th percentile but have the option for 95. 
 haw_y <- total_99[,specNames]
@@ -282,6 +282,10 @@ save(out, file = "Models/trained_hawaii.rdata")
 #3. Train Hawaii 
 ##set up train and test data
 ```{r}
+#test with 1000, 
+haw_y_1000 <- haw_y*1000
+haw_y <- haw_y_1000
+haw_dat <- cbind(haw_y_1000, haw_x)
 ###1.1.2 Split into Testing and Training Data
 
 smp_size <- floor(0.80 * nrow(haw_dat))
@@ -398,6 +402,8 @@ save(out, file = "Models/full_hawaii.rdata")
 This is a test to see how well the model fits on the IATTC data 
 ```{r}
 #predict unconditionally, out-of-sample IATTC
+#testing with 1000 
+IATTC_y <- IATTC_y*1000
 newdata2   <- list(xdata = IATTC_x, nsim = 1000) 
 p3 <- gjamPredict(out, newdata = newdata2)
 save(p3, file = "Results/p3.rdata")
