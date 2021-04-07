@@ -154,7 +154,7 @@ total_95 <- cbind(haw_x, out_table)
 
 total_95 <- total_95[complete.cases(total_95),]   
 
-
+#add in 
 
 #use 99th percentile but have the option for 95. 
 haw_y <- total_99[,specNames]
@@ -282,6 +282,10 @@ save(out, file = "Models/trained_hawaii.rdata")
 #3. Train Hawaii 
 ##set up train and test data
 ```{r}
+#test with 1000, 
+haw_y_1000 <- haw_y*1000
+haw_y <- haw_y_1000
+haw_dat <- cbind(haw_y_1000, haw_x)
 ###1.1.2 Split into Testing and Training Data
 
 smp_size <- floor(0.80 * nrow(haw_dat))
@@ -398,6 +402,8 @@ save(out, file = "Models/full_hawaii.rdata")
 This is a test to see how well the model fits on the IATTC data 
 ```{r}
 #predict unconditionally, out-of-sample IATTC
+#testing with 1000 
+IATTC_y <- IATTC_y*1000
 newdata2   <- list(xdata = IATTC_x, nsim = 1000) 
 p3 <- gjamPredict(out, newdata = newdata2)
 save(p3, file = "Results/p3.rdata")
@@ -1067,7 +1073,7 @@ pp <- ggplot()  + geom_point(data = dat, aes(x = obs,y = pred), size = .2, color
   labs(x = expression(paste("Predicted shark catch (CPUE)")), y = expression(paste("Recorded shark catch (CPUE)"),title="HPLF Model Validation"))
 
 
-ggarrange(p, pp, common.legend = TRUE, legend = "bottom")+ ggsave(filename= "Figures/FigureS2.jpg", plot=last_plot(), width = 25, height=15, units=c("cm"), dpi=500)
+ggarrange(p, pp, common.legend = TRUE, legend = "bottom")+ ggsave(filename= "Figures/1000/FigureS2.jpg", plot=last_plot(), width = 25, height=15, units=c("cm"), dpi=500)
 ```
 
 ###bycatch loop 
@@ -1144,7 +1150,7 @@ plot_list[[i]] <- ploty
 }
 
 
-do.call(ggarrange, c(plot_list[1:length(plot_list)], common.legend = TRUE, legend = "bottom"))+ ggsave(filename= "Figures/FigureS4a.jpg", plot=last_plot(), width = 30, height=25, units=c("cm"), dpi=500)
+do.call(ggarrange, c(plot_list[1:length(plot_list)], common.legend = TRUE, legend = "bottom"))+ ggsave(filename= "Figures/1000/FigureS4a.jpg", plot=last_plot(), width = 30, height=25, units=c("cm"), dpi=500)
 ```
 
 ###all unconditional 
@@ -1183,7 +1189,7 @@ plot_list[[i]] <- ploty
 }
 
 
-do.call(ggarrange, c(plot_list[1:length(cdex)], common.legend = TRUE, legend = "bottom"))+ ggsave(filename= "Figures/FigureS_unconditional_outofsample_haw.jpg", plot=last_plot(), width = 30, height=25, units=c("cm"), dpi=500)
+do.call(ggarrange, c(plot_list[1:length(cdex)], common.legend = TRUE, legend = "bottom"))+ ggsave(filename= "Figures/1000/FigureS_unconditional_outofsample_haw.jpg", plot=last_plot(), width = 30, height=25, units=c("cm"), dpi=500)
 ```
 
 #SX Observed vs. predicted IATTC
@@ -1222,5 +1228,5 @@ plot_list[[i]] <- ploty
 }
 
 
-do.call(ggarrange, c(plot_list[1:length(plot_list)], common.legend = TRUE, legend = "bottom"))+ ggsave(filename= "Figures/FigureS_unconditional_outofsample_IATTC.jpg", plot=last_plot(), width = 30, height=25, units=c("cm"), dpi=500)
+do.call(ggarrange, c(plot_list[1:length(plot_list)], common.legend = TRUE, legend = "bottom"))+ ggsave(filename= "Figures/1000/FigureS_unconditional_outofsample_IATTC.jpg", plot=last_plot(), width = 30, height=25, units=c("cm"), dpi=500)
 ```
