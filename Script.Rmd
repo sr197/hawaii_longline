@@ -50,6 +50,143 @@ library(lessR)#for gjam output figures
 #ANALYSIS
 #1. Data Prep 
 ##Hawaii
+#____________
+something isn't right with this data. 
+###look at the data I have 
+```{r}
+Deep <- read_excel("~/Documents/Longline/hawaii/HawaiiLongline Data 2004 - 201920200709082349/PhD student Hawaii Longline Data Request (Deep Set).xlsx")
+
+Shallow <- read_excel("~/Documents/Longline/hawaii/HawaiiLongline Data 2004 - 201920200709082349/PhD student Hawaii Longline Data Request (Shallow Set).xlsx")
+
+#select out info I want 
+Deep <- Deep %>% dplyr::select(HAUL_BEGIN_YEAR, HAUL_BEGIN_MONTH, HAUL_BEGIN_LAT_GRID, HAUL_BEGIN_LON_GRID, NUM_HKS_SET, YELLOWFIN_TUNA, SWORDFISH, STRIPED_MARLIN, BLUE_MARLIN, SHORTBILL_SPEARFISH, SAILFISH, BIGEYE_TUNA, SKIPJACK_TUNA, ALBACORE_TUNA, BLUE_SHARK, SILKY_SHARK, UNID_MAKO_SHARK, SHORTFIN_MAKO_SHARK, LONGFIN_MAKO_SHARK, UNID_THRESHER_SHARK, BIGEYE_THRESHER_SHARK, PELAGIC_THRESHER_SHARK, COMMON_THRESHER_SHARK, OCEANIC_WHITETIP_SHARK)
+
+Deep$MAKn <- Deep$UNID_MAKO_SHARK + Deep$LONGFIN_MAKO_SHARK + Deep$SHORTFIN_MAKO_SHARK
+Deep$THRn <- Deep$UNID_THRESHER_SHARK + Deep$BIGEYE_THRESHER_SHARK + Deep$COMMON_THRESHER_SHARK + Deep$PELAGIC_THRESHER_SHARK
+
+Shallow <- Shallow %>% dplyr::select(HAUL_BEGIN_YEAR, HAUL_BEGIN_MONTH, HAUL_BEGIN_LAT_GRID, HAUL_BEGIN_LON_GRID, NUM_HKS_SET, YELLOWFIN_TUNA, SWORDFISH, STRIPED_MARLIN, BLUE_MARLIN, SHORTBILL_SPEARFISH, SAILFISH, BIGEYE_TUNA, SKIPJACK_TUNA, ALBACORE_TUNA, BLUE_SHARK, SILKY_SHARK, UNID_MAKO_SHARK, SHORTFIN_MAKO_SHARK, LONGFIN_MAKO_SHARK, UNID_THRESHER_SHARK, BIGEYE_THRESHER_SHARK, PELAGIC_THRESHER_SHARK, COMMON_THRESHER_SHARK, OCEANIC_WHITETIP_SHARK)
+
+Shallow$MAKn <- Shallow$UNID_MAKO_SHARK + Shallow$LONGFIN_MAKO_SHARK + Shallow$SHORTFIN_MAKO_SHARK
+Shallow$THRn <- Shallow$UNID_THRESHER_SHARK + Shallow$BIGEYE_THRESHER_SHARK + Shallow$COMMON_THRESHER_SHARK + Shallow$PELAGIC_THRESHER_SHARK
+
+Shallow <- Shallow %>% dplyr::select(HAUL_BEGIN_YEAR, HAUL_BEGIN_MONTH, HAUL_BEGIN_LAT_GRID, HAUL_BEGIN_LON_GRID, NUM_HKS_SET, YELLOWFIN_TUNA, SWORDFISH, STRIPED_MARLIN, BLUE_MARLIN, SHORTBILL_SPEARFISH, SAILFISH, BIGEYE_TUNA, SKIPJACK_TUNA, ALBACORE_TUNA, BLUE_SHARK, SILKY_SHARK, MAKn, THRn, OCEANIC_WHITETIP_SHARK)
+
+Deep <- Deep %>% dplyr::select(HAUL_BEGIN_YEAR, HAUL_BEGIN_MONTH, HAUL_BEGIN_LAT_GRID, HAUL_BEGIN_LON_GRID, NUM_HKS_SET, YELLOWFIN_TUNA, SWORDFISH, STRIPED_MARLIN, BLUE_MARLIN, SHORTBILL_SPEARFISH, SAILFISH, BIGEYE_TUNA, SKIPJACK_TUNA, ALBACORE_TUNA, BLUE_SHARK, SILKY_SHARK, MAKn, THRn, OCEANIC_WHITETIP_SHARK)
+
+specNames <- c("ALBn", "BETn", "SKJn", "YFTn", "BUMn", "MLSn", "SFAn","SSPn","SWOn", "THRn", "BSHn", "OCSn", "MAKn", "FALn")
+
+colnames(Shallow) <- c("HAUL_BEGIN_YEAR", "HAUL_BEGIN_MONTH", "HAUL_BEGIN_LAT_GRID", "HAUL_BEGIN_LON_GRID", "NUM_HKS_SET",  "YFTn", "SWOn", "MLSn", "BUMn", "SSPn", "SFAn","BETn","SKJn","ALBn","BSHn", "FALn", "MAKn","THRn","OCSn")
+
+
+
+colnames(Deep) <- c("HAUL_BEGIN_YEAR", "HAUL_BEGIN_MONTH", "HAUL_BEGIN_LAT_GRID", "HAUL_BEGIN_LON_GRID", "NUM_HKS_SET",  "YFTn", "SWOn", "MLSn", "BUMn", "SSPn", "SFAn","BETn","SKJn","ALBn","BSHn", "FALn", "MAKn","THRn","OCSn")
+
+
+
+Haw_total <- rbind(Deep, Shallow)
+Haw_total$NUM_HKS_SET <- as.numeric(Haw_total$NUM_HKS_SET)
+Haw_total <- Haw_total[!is.na(Haw_total$NUM_HKS_SET),]
+
+#lots of repeats (also add shallow and deep together)
+Haw_total <- Haw_total %>% group_by(HAUL_BEGIN_YEAR, HAUL_BEGIN_MONTH, HAUL_BEGIN_LAT_GRID, HAUL_BEGIN_LON_GRID) %>% summarise_all(sum, na.rm=TRUE)
+
+
+#combine with some ENV data. 
+Haw_total <- Haw_total %>% separate(HAUL_BEGIN_LAT_GRID, c("LatA","LatB"), sep = "to")
+Haw_total[Haw_total == "NULL"] = NA
+
+Haw_total <- Haw_total %>% separate(HAUL_BEGIN_LON_GRID, c("LonA","LonB"), sep = "to")
+
+Haw_total$LatA <- as.numeric(Haw_total$LatA)
+Haw_total$LatB <- as.numeric(Haw_total$LatB)
+Haw_total$LonA <- as.numeric(Haw_total$LonA)
+Haw_total$LonB <- as.numeric(Haw_total$LonB)
+
+Haw_total$Mean_lat <- (Haw_total$LatA + Haw_total$LatB)/2
+Haw_total$Mean_lat <- Haw_total$Mean_lat + .00005
+Haw_total$Mean_lon <- (Haw_total$LonA + Haw_total$LonB)/2
+
+
+
+
+Haw_total$Year <- as.numeric(Haw_total$HAUL_BEGIN_YEAR)
+Haw_total$Month <- lapply(Haw_total$HAUL_BEGIN_MONTH,function(x) grep(paste("(?i)",x,sep=""),month.abb))
+Haw_total$Month <- as.numeric(Haw_total$Month)
+
+Haw_total$LAT_ROUND <- round(Haw_total$Mean_lat, digits = 0)
+Haw_total$LON_ROUND <- round(Haw_total$Mean_lon, digits = 0) -3
+
+Haw_total_y <- Haw_total[,cdex]
+
+Haw_y_cpue <- Haw_total_y/Haw_total$NUM_HKS_SET
+#these data go from .02 to 0. Different from what Guillermo gave me
+summary(Haw_y_cpue) #mine
+summary(haw_y) #gs
+summary(IATTC_y)
+
+#look at just US IATTC
+IATTC_y$Flag <- IATTC_x$Flag
+IATTC_y <- IATTC_y[IATTC_y$Flag=="USA",]
+hist(IATTC_y$SWOn, breaks = 50)
+
+hist(Haw_y_cpue$SWOn,breaks = 50)
+hist(haw_y$SWOn,breaks = 50)
+
+
+write.csv(Haw_total, "Haw_5x5.csv")
+```
+
+###add in xdata 
+
+```{r}
+Haw_fishnet_ID <- read.csv("Data/Processed/haw_poly_info.csv")
+Haw_total <- read.csv("Data/Processed/Haw_5x5.csv")
+Haw_total$polyID <- Haw_fishnet_ID$Pol_ID
+
+#add in ENV monthly 
+env.monthly <- read.csv("Data/Processed/monthly_ENV_grid_wide.csv")
+
+env.monthly$Year <- env.monthly$Year + 2000
+
+Haw_total1 <- left_join(Haw_total, env.monthly, by = c("polyID"="polyID", "Year" = "Year", "Month" = "Month"))
+
+#WOA 
+WOA.monthly <- read.csv("Data/Processed/WOA_wide.csv")
+
+Haw_total1 <- left_join(Haw_total1, WOA.monthly, by = c("polyID"="polyID", "Month" = "Month"))
+
+
+#Depth_stats 
+depth_data<- read.csv("Data/Raw/Haw_fishnet_depth.csv")
+Haw_total1 <- left_join(Haw_total1, depth_data, by = c("polyID"="POL_ID"))
+
+
+write.csv(Haw_total1, "Data/Processed/Haw_5x5_envadded.csv")
+
+```
+
+
+#look at shallow and deep polygons 
+```{r}
+library(rgdal)
+polydeep <- readOGR("~/Documents/Longline/hawaii/deep_shallow_files/", layer="HI_deep_polygons")
+
+dat_deep <- polydeep@data
+
+polyshallow <- readOGR("~/Documents/Longline/hawaii/deep_shallow_files/", layer="HI_shallow_polygons")
+
+dat_shallow <- polyshallow@data
+
+dat_all <- rbind(dat_deep, dat_shallow)
+dat_all_test <- dat_all %>% dplyr::select(Tuna__Bige, OBJECTID)
+dat_all_test$Tuna__Bige <- as.numeric(as.character(dat_all_test$Tuna__Bige))/as.numeric(as.character(dat_all$NUM_HKS_SE))
+
+
+
+
+```
+
+#_____________
 ```{r}
 #Load in and Prepare Data
 shallow <- read.csv("Data/Raw/shallow.csv", na.strings=c(-9999, -9999), header = TRUE, sep = ",")
