@@ -220,6 +220,71 @@ IATTC_x <- IATTC_tot[,xnames]
 somewhere in here, we need to put the code for how we selected the final model variables. 
 We know from before the most important variables for predicting hawaii. But we need to think about the most important variables for predicting IATTC. I'll start that process here
 
+Set up a model that combines IATTC and hawaii datasets and tries to predict target species. Do this for 1. the area that overlaps hawaii and 2. the whole IATTC area 
+
+##all iattc 
+```{r}
+IATTC_dat <- cbind(IATTC_x, IATTC_y)
+IATTC_lat_lon <- IATTC_with_env_allyears %>% dplyr::select(RFMO_ID, LatC5, LonC5)
+
+IATTC_dat <- left_join(IATTC_dat, IATTC_lat_lon, by = c("RFMO_ID"))
+
+xnames <- c("DEPTH.RANGE",
+            "OXY.MESO","salinity.0000m.mean","surf.el.mean","water.temp.0000m.mean","aqua.CHL.chlor.a.mean")
+
+IATTC_dat_nooverlap_x <-  IATTC_dat[,xnames]
+IATTC_dat_nooverlap_y <-  IATTC_dat[,cdex]
+
+haw_nooverlap_x <-  haw_x[,xnames]
+haw_nooverlap_y <-  haw_y[,cdex]
+
+nooverlap_y <- rbind(IATTC_dat_nooverlap_y, haw_nooverlap_y)
+nooverlap_x <- rbind(IATTC_dat_nooverlap_x, haw_nooverlap_x)
+
+formula <- as.formula(~water.temp.0000m.mean +aqua.CHL.chlor.a.mean + surf.el.mean + OXY.MESO + salinity.0000m.mean*aqua.CHL.chlor.a.mean + DEPTH.RANGE)
+
+ml  <- list(ng = 200, burnin = 80, typeNames = 'CA')#, effort = effort)#, effort = effort) # fit the non-holdouts
+ml$REDUCT <- FALSE
+
+out<- gjam(formula = formula, nooverlap_x, nooverlap_y, modelList = ml)
+save(out, file = "Models/overlap_full.rdata")
+
+plotPars <- list(PLOTALLY = T, SMALLPLOTS = T, GRIDPLOTS = T, 
+                 SAVEPLOTS = FALSE)
+gjamPlot(out, plotPars = plotPars) #jim said to look at inverse prediction 
+```
+
+##overlapping iattc 
+```{r}
+IATTC_dat_overlap <- IATTC_dat %>% filter(LatC5 > min(coords$LAT) & LatC5 < max(coords$LAT)& LonC5 > min(coords$LON) & LonC5 < max(coords$LON))
+
+xnames <- c("DEPTH.RANGE",
+            "OXY.MESO","salinity.0000m.mean","surf.el.mean","water.temp.0000m.mean","aqua.CHL.chlor.a.mean")
+
+
+IATTC_dat_overlap_x <-  IATTC_dat_overlap[,xnames]
+IATTC_dat_overlap_y <-  IATTC_dat_overlap[,cdex]
+
+haw_overlap_x <-  haw_x[,xnames]
+haw_overlap_y <-  haw_y[,cdex]
+
+overlap_y <- rbind(IATTC_dat_overlap_y, haw_overlap_y)
+overlap_x <- rbind(IATTC_dat_overlap_x, haw_overlap_x)
+
+
+formula <- as.formula(~water.temp.0000m.mean +aqua.CHL.chlor.a.mean + surf.el.mean + OXY.MESO + salinity.0000m.mean*aqua.CHL.chlor.a.mean + DEPTH.RANGE)
+
+ml  <- list(ng = 200, burnin = 80, typeNames = 'CA')#, effort = effort)#, effort = effort) # fit the non-holdouts
+ml$REDUCT <- FALSE
+
+out<- gjam(formula = formula, overlap_x, overlap_y, modelList = ml)
+save(out, file = "Models/overlap_full.rdata")
+
+plotPars <- list(PLOTALLY = T, SMALLPLOTS = T, GRIDPLOTS = T, 
+                 SAVEPLOTS = FALSE)
+gjamPlot(out, plotPars = plotPars) #jim said to look at inverse prediction 
+```
+
 ##set up train and test data
 ```{r}
 ###1.1.2 Split into Testing and Training Data
@@ -285,7 +350,7 @@ save(out, file = "Models/trained_hawaii.rdata")
 ##set up train and test data
 ```{r}
 ###1.1.2 Split into Testing and Training Data
-#haw_dat <- read.csv("Data/Processed/Haw_5x5_envadded.csv")
+#haw_dat <- read.csv("Data/Processed/Haw_5x5_envadded.csv") #uncomment if want to run on 5x5 data
 smp_size <- floor(0.80 * nrow(haw_dat))
 set.seed(118)
 train_ind <- sample(seq_len(nrow(haw_dat)), size = smp_size)
@@ -337,6 +402,9 @@ formula <- as.formula(~water.temp.0000m.mean +aqua.CHL.chlor.a.mean + OXY.MESO +
                         salinity.0000m.mean + DEPTH.RANGE)
 
 formula <- as.formula(~water.temp.0000m.mean +aqua.CHL.chlor.a.mean + 
+                        salinity.0000m.mean + OXY.MESO)
+
+formula <- as.formula(~water.temp.0000m.mean +aqua.CHL.chlor.a.mean + 
                         salinity.0000m.mean)
 
 cdex <- c("BUMn", "MLSn", "SFAn", "SSPn", "SWOn", "ALBn", "BETn", "SKJn", "YFTn") # Condition on market ctach             # condition on 2 species
@@ -349,8 +417,8 @@ qr(x)$rank
 dim(x)
 
 out<- gjam(formula = formula, haw_train_x, haw_train_y, modelList = ml)
-save(out, file = "Models/trained_hawaii_origformula.rdata")
-load("Models/trained_hawaii_origformula.rdata")
+save(out, file = "Models/trained_hawaii_tempsalchlaoxy.rdata")
+load("Models/trained_hawaii_tempsalchlaoxy.rdata")
 ```
 
 
@@ -1008,7 +1076,7 @@ df <- data.frame(x = mids,
                  ymin = qq[,2],
                  ymax = qq[,3])
 
-p <- ggplot()  + geom_point(data = dat, aes(x = pred,y = obs), size = .2, color = "grey50", alpha = .3) +
+p <- ggplot()  + geom_point(data = dat, aes(x = pred,y = obs), size = .2, color = "black") +
   geom_point(data = df,aes(x = x,y = y, colour=(ymax-ymin)/2)) + 
   # geom_errorbar(data = df,aes(x = x,y = y, ymin = ymin,ymax = ymax,width=0.1,colour = ((ymax-ymin)/2))) + 
   geom_abline(linetype=2) + 
@@ -1064,7 +1132,7 @@ rmseval <- Metrics::rmse(actual = dat$obs, predicted = dat$pred) #to put on the 
 meany <- mean(dat$obs) #to put on the graph
 rmseval2 <- Metrics::rmse(actual = df$x, predicted = df$y) #to put on the graph
 meany2 <- mean(df$y) #to put on the graph
-pp <- ggplot()  + geom_point(data = dat, aes(x = obs,y = pred), size = .2, color = "grey50", alpha = .3) +
+pp <- ggplot()  + geom_point(data = dat, aes(x = obs,y = pred), size = .2, color = "black") +
   # geom_point(data = df,aes(x = x,y = y, colour=(ymax-ymin)/2)) + 
   # geom_errorbar(data = df,aes(x = x,y = y, ymin = ymin,ymax = ymax,width=0.1,colour = ((ymax-ymin)/2))) + 
   geom_abline(linetype=2) + 
@@ -1140,11 +1208,11 @@ rss <- sum((dat$yp - dat$yo) ^ 2)  ## residual sum of squares
 tss <- sum((dat$yp - mean(dat$yo)) ^ 2)  ## total sum of squares
 rsq <- 1 - rss/tss
 
-ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "grey50", alpha = .3)+
+ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "black")+
   geom_abline(linetype=2) +  
   theme_Publication() + 
-  xlim(c(0,max(dat$yp)/5))+ 
-  ylim(c(0,max(dat$yp)/5)) + 
+  xlim(c(0,max(dat$yp)))+ 
+  ylim(c(0,max(dat$yp))) + 
   annotate(geom="text", color = "red", x=max(dat$yp)/10, y=max(dat$yp)/8, label=paste0("RMSPE =", round(rmseval, digits = 2))) + 
   annotate(geom="text", color = "red", x=max(dat$yp)/10, y=(max(dat$yp)/10), label=paste0("R2 =", round(rsq, digits = 2))) + 
   theme(aspect.ratio = 1) +
@@ -1183,11 +1251,11 @@ rss <- sum((dat$yp - dat$yo) ^ 2)  ## residual sum of squares
 tss <- sum((dat$yp - mean(dat$yo)) ^ 2)  ## total sum of squares
 rsq <- 1 - rss/tss
 
-ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "grey50", alpha = .3)+
+ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "black")+
   geom_abline(linetype=2) +  
   theme_Publication() + 
-  xlim(c(0,max(dat$yp)/5))+ 
-  ylim(c(0,max(dat$yp)/5)) + 
+  xlim(c(0,max(dat$yp)))+ 
+  ylim(c(0,max(dat$yp))) + 
   annotate(geom="text", color = "red", x=max(dat$yp)/10, y=max(dat$yp)/8, label=paste0("RMSPE =", round(rmseval, digits = 2))) + 
   annotate(geom="text", color = "red", x=max(dat$yp)/10, y=(max(dat$yp)/10), label=paste0("R2 =", round(rsq, digits = 2))) + 
   theme(aspect.ratio = 1) +
@@ -1208,10 +1276,7 @@ steps<- c("Albacore", "Bigeye Tuna", "Skipjack", "Yellowfin", " Blue Marlin", "S
 
 adex <- c("ALBn", "BETn", "SKJn", "YFTn", "BUMn", "MLSn", "SFAn","SSPn","SWOn", "THRn", "BSHn", "OCSn", "MAKn", "FALn")
 
-load("Models/trained_hawaii.rdata")
-
 xnames <- rownames(out[["parameters"]][["sensTable"]])
-
 plot_list = list()
 
 
@@ -1236,7 +1301,7 @@ newy2 <- newy2[,-1]
 for(i in 1:length(steps)){
   name <- steps[i]
   namey <- adex[i]
-  yo = newy2[,cdex[i]] #if we want them all to match I think it needs to be in catch/1000 hooks
+  yo = newy2[,adex[i]] #if we want them all to match I think it needs to be in catch/1000 hooks
 yp = p1$sdList$yMu[,namey]
 yp <- as.data.frame(yp)
 yp$cluster <- clusters
@@ -1252,7 +1317,7 @@ rss <- sum((dat$yp - dat$yo) ^ 2)  ## residual sum of squares
 tss <- sum((dat$yp - mean(dat$yo)) ^ 2)  ## total sum of squares
 rsq <- 1 - rss/tss
 
-ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "grey50", alpha = .3)+
+ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "black")+
   geom_abline(linetype=2) +  
   theme_Publication() + 
   xlim(c(0,max(dat$yp)))+ 
@@ -1281,6 +1346,8 @@ cdex <- c("ALBn", "BETn", "SKJn", "YFTn", "BUMn", "MLSn", "SFAn","SSPn","SWOn")
 
 plot_list = list()
 
+
+xnames <- c(rownames(out[["parameters"]][["sensTable"]]))
 #aggregate
 cvar <- IATTC_x[,xnames]
 minSize <- 10                   # experiment with sizes of clusters
@@ -1315,7 +1382,7 @@ rss <- sum((dat$yp - dat$yo) ^ 2)  ## residual sum of squares
 tss <- sum((dat$yp - mean(dat$yo)) ^ 2)  ## total sum of squares
 rsq <- 1 - rss/tss
 
-ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "grey50", alpha = .3)+
+ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "black")+
   geom_abline(linetype=2) +  
   theme_Publication() + 
   xlim(c(0,max(dat$yp)/5))+ 
@@ -1355,7 +1422,7 @@ rss <- sum((dat$yp - dat$yo) ^ 2)  ## residual sum of squares
 tss <- sum((dat$yp - mean(dat$yo)) ^ 2)  ## total sum of squares
 rsq <- 1 - rss/tss
 
-ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "grey50", alpha = .3)+
+ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "black")+
   geom_abline(linetype=2) +  
   theme_Publication() + 
   xlim(c(0,max(dat$yp)/5))+ 
@@ -1370,7 +1437,6 @@ plot_list[[i]] <- ploty
 
 do.call(ggarrange, c(plot_list[1:length(plot_list)], common.legend = TRUE, legend = "bottom"))+ ggsave(filename= "Figures/FigureS_unconditional_outofsample_IATTC1.jpg", plot=last_plot(), width = 30, height=25, units=c("cm"), dpi=500)
 ```
-
 
 ###US only
 Same as above but just the US fleet (theoretically this should be the same as hawaii so should do a good job)
@@ -1397,7 +1463,7 @@ rss <- sum((dat$yp - dat$yo) ^ 2)  ## residual sum of squares
 tss <- sum((dat$yp - mean(dat$yo)) ^ 2)  ## total sum of squares
 rsq <- 1 - rss/tss
 
-ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "grey50", alpha = .3)+
+ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "black")+
   geom_abline(linetype=2) +  
   theme_Publication() + 
   xlim(c(0,max(dat$yp)/5))+ 
@@ -1642,6 +1708,7 @@ Haw_total1 <- cbind(xdata, other_1, ydata)
 
 
 write.csv(Haw_total1, "Data/Processed/Haw_5x5_envadded.csv")
+read.csv("Data/Processed/Haw_5x5_envadded.csv")
 
 ```
 
@@ -1669,6 +1736,7 @@ dat_all_test$Tuna__Bige <- as.numeric(as.character(dat_all_test$Tuna__Bige))/as.
 #_____________
 
 
+#MODEL VERSIONS
 ```{r}
 load("Models/trained_hawaii_origformula.rdata") #this is on original CPUE (G) and the long forumula listed below
 # ~water.temp.0000m.mean*aqua.CHL.chlor.a.mean + OXY.MESO * 
@@ -1679,6 +1747,9 @@ load("Models/trained_hawaii_origformula.rdata") #this is on original CPUE (G) an
 
 load("Models/trained_hawaii_simp.rdata") #this is on original CPUE (G) and a simplified formula 
 # water.temp.0000m.mean + aqua.CHL.chlor.a.mean + salinity.0000m.mean
+
+load("Models/trained_hawaii_tempsalchlaoxy.rdata") #this is on original CPUE (G) and a simplified formula 
+# water.temp.0000m.mean + aqua.CHL.chlor.a.mean + salinity.0000m.mean + OXY.MESO
 
 load("Models/trained_hawaii.rdata") #this is on original CPUE (G) and a simplified formula 
 # ~water.temp.0000m.mean + aqua.CHL.chlor.a.mean + OXY.MESO + salinity.0000m.mean + DEPTH.RANGE
@@ -1691,3 +1762,10 @@ load("Models/trained_hawaii_5x5_simp2.rdata")#this is my CPUE (5x5) and a simpli
 
 ```
 
+
+predicting for area that overlaped 
+
+new version of gjam. 
+- have to compile it. 
+-species are being caught have shared traits that
+-traits vignette 
