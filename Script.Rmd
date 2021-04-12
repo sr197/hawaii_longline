@@ -3,6 +3,8 @@ title: "Script"
 author: "Sarah Roberts"
 date: "4/2/2021"
 output: html_document
+editor_options: 
+  chunk_output_type: inline
 ---
 
 Overview: 
@@ -50,143 +52,7 @@ library(lessR)#for gjam output figures
 #ANALYSIS
 #1. Data Prep 
 ##Hawaii
-#____________
-something isn't right with this data. 
-###look at the data I have 
-```{r}
-Deep <- read_excel("~/Documents/Longline/hawaii/HawaiiLongline Data 2004 - 201920200709082349/PhD student Hawaii Longline Data Request (Deep Set).xlsx")
 
-Shallow <- read_excel("~/Documents/Longline/hawaii/HawaiiLongline Data 2004 - 201920200709082349/PhD student Hawaii Longline Data Request (Shallow Set).xlsx")
-
-#select out info I want 
-Deep <- Deep %>% dplyr::select(HAUL_BEGIN_YEAR, HAUL_BEGIN_MONTH, HAUL_BEGIN_LAT_GRID, HAUL_BEGIN_LON_GRID, NUM_HKS_SET, YELLOWFIN_TUNA, SWORDFISH, STRIPED_MARLIN, BLUE_MARLIN, SHORTBILL_SPEARFISH, SAILFISH, BIGEYE_TUNA, SKIPJACK_TUNA, ALBACORE_TUNA, BLUE_SHARK, SILKY_SHARK, UNID_MAKO_SHARK, SHORTFIN_MAKO_SHARK, LONGFIN_MAKO_SHARK, UNID_THRESHER_SHARK, BIGEYE_THRESHER_SHARK, PELAGIC_THRESHER_SHARK, COMMON_THRESHER_SHARK, OCEANIC_WHITETIP_SHARK)
-
-Deep$MAKn <- Deep$UNID_MAKO_SHARK + Deep$LONGFIN_MAKO_SHARK + Deep$SHORTFIN_MAKO_SHARK
-Deep$THRn <- Deep$UNID_THRESHER_SHARK + Deep$BIGEYE_THRESHER_SHARK + Deep$COMMON_THRESHER_SHARK + Deep$PELAGIC_THRESHER_SHARK
-
-Shallow <- Shallow %>% dplyr::select(HAUL_BEGIN_YEAR, HAUL_BEGIN_MONTH, HAUL_BEGIN_LAT_GRID, HAUL_BEGIN_LON_GRID, NUM_HKS_SET, YELLOWFIN_TUNA, SWORDFISH, STRIPED_MARLIN, BLUE_MARLIN, SHORTBILL_SPEARFISH, SAILFISH, BIGEYE_TUNA, SKIPJACK_TUNA, ALBACORE_TUNA, BLUE_SHARK, SILKY_SHARK, UNID_MAKO_SHARK, SHORTFIN_MAKO_SHARK, LONGFIN_MAKO_SHARK, UNID_THRESHER_SHARK, BIGEYE_THRESHER_SHARK, PELAGIC_THRESHER_SHARK, COMMON_THRESHER_SHARK, OCEANIC_WHITETIP_SHARK)
-
-Shallow$MAKn <- Shallow$UNID_MAKO_SHARK + Shallow$LONGFIN_MAKO_SHARK + Shallow$SHORTFIN_MAKO_SHARK
-Shallow$THRn <- Shallow$UNID_THRESHER_SHARK + Shallow$BIGEYE_THRESHER_SHARK + Shallow$COMMON_THRESHER_SHARK + Shallow$PELAGIC_THRESHER_SHARK
-
-Shallow <- Shallow %>% dplyr::select(HAUL_BEGIN_YEAR, HAUL_BEGIN_MONTH, HAUL_BEGIN_LAT_GRID, HAUL_BEGIN_LON_GRID, NUM_HKS_SET, YELLOWFIN_TUNA, SWORDFISH, STRIPED_MARLIN, BLUE_MARLIN, SHORTBILL_SPEARFISH, SAILFISH, BIGEYE_TUNA, SKIPJACK_TUNA, ALBACORE_TUNA, BLUE_SHARK, SILKY_SHARK, MAKn, THRn, OCEANIC_WHITETIP_SHARK)
-
-Deep <- Deep %>% dplyr::select(HAUL_BEGIN_YEAR, HAUL_BEGIN_MONTH, HAUL_BEGIN_LAT_GRID, HAUL_BEGIN_LON_GRID, NUM_HKS_SET, YELLOWFIN_TUNA, SWORDFISH, STRIPED_MARLIN, BLUE_MARLIN, SHORTBILL_SPEARFISH, SAILFISH, BIGEYE_TUNA, SKIPJACK_TUNA, ALBACORE_TUNA, BLUE_SHARK, SILKY_SHARK, MAKn, THRn, OCEANIC_WHITETIP_SHARK)
-
-specNames <- c("ALBn", "BETn", "SKJn", "YFTn", "BUMn", "MLSn", "SFAn","SSPn","SWOn", "THRn", "BSHn", "OCSn", "MAKn", "FALn")
-
-colnames(Shallow) <- c("HAUL_BEGIN_YEAR", "HAUL_BEGIN_MONTH", "HAUL_BEGIN_LAT_GRID", "HAUL_BEGIN_LON_GRID", "NUM_HKS_SET",  "YFTn", "SWOn", "MLSn", "BUMn", "SSPn", "SFAn","BETn","SKJn","ALBn","BSHn", "FALn", "MAKn","THRn","OCSn")
-
-
-
-colnames(Deep) <- c("HAUL_BEGIN_YEAR", "HAUL_BEGIN_MONTH", "HAUL_BEGIN_LAT_GRID", "HAUL_BEGIN_LON_GRID", "NUM_HKS_SET",  "YFTn", "SWOn", "MLSn", "BUMn", "SSPn", "SFAn","BETn","SKJn","ALBn","BSHn", "FALn", "MAKn","THRn","OCSn")
-
-
-
-Haw_total <- rbind(Deep, Shallow)
-Haw_total$NUM_HKS_SET <- as.numeric(Haw_total$NUM_HKS_SET)
-Haw_total <- Haw_total[!is.na(Haw_total$NUM_HKS_SET),]
-
-#lots of repeats (also add shallow and deep together)
-Haw_total <- Haw_total %>% group_by(HAUL_BEGIN_YEAR, HAUL_BEGIN_MONTH, HAUL_BEGIN_LAT_GRID, HAUL_BEGIN_LON_GRID) %>% summarise_all(sum, na.rm=TRUE)
-
-
-#combine with some ENV data. 
-Haw_total <- Haw_total %>% separate(HAUL_BEGIN_LAT_GRID, c("LatA","LatB"), sep = "to")
-Haw_total[Haw_total == "NULL"] = NA
-
-Haw_total <- Haw_total %>% separate(HAUL_BEGIN_LON_GRID, c("LonA","LonB"), sep = "to")
-
-Haw_total$LatA <- as.numeric(Haw_total$LatA)
-Haw_total$LatB <- as.numeric(Haw_total$LatB)
-Haw_total$LonA <- as.numeric(Haw_total$LonA)
-Haw_total$LonB <- as.numeric(Haw_total$LonB)
-
-Haw_total$Mean_lat <- (Haw_total$LatA + Haw_total$LatB)/2
-Haw_total$Mean_lat <- Haw_total$Mean_lat + .00005
-Haw_total$Mean_lon <- (Haw_total$LonA + Haw_total$LonB)/2
-
-
-
-
-Haw_total$Year <- as.numeric(Haw_total$HAUL_BEGIN_YEAR)
-Haw_total$Month <- lapply(Haw_total$HAUL_BEGIN_MONTH,function(x) grep(paste("(?i)",x,sep=""),month.abb))
-Haw_total$Month <- as.numeric(Haw_total$Month)
-
-Haw_total$LAT_ROUND <- round(Haw_total$Mean_lat, digits = 0)
-Haw_total$LON_ROUND <- round(Haw_total$Mean_lon, digits = 0) -3
-
-Haw_total_y <- Haw_total[,cdex]
-
-Haw_y_cpue <- Haw_total_y/Haw_total$NUM_HKS_SET
-#these data go from .02 to 0. Different from what Guillermo gave me
-summary(Haw_y_cpue) #mine
-summary(haw_y) #gs
-summary(IATTC_y)
-
-#look at just US IATTC
-IATTC_y$Flag <- IATTC_x$Flag
-IATTC_y <- IATTC_y[IATTC_y$Flag=="USA",]
-hist(IATTC_y$SWOn, breaks = 50)
-
-hist(Haw_y_cpue$SWOn,breaks = 50)
-hist(haw_y$SWOn,breaks = 50)
-
-
-write.csv(Haw_total, "Haw_5x5.csv")
-```
-
-###add in xdata 
-
-```{r}
-Haw_fishnet_ID <- read.csv("Data/Processed/haw_poly_info.csv")
-Haw_total <- read.csv("Data/Processed/Haw_5x5.csv")
-Haw_total$polyID <- Haw_fishnet_ID$Pol_ID
-
-#add in ENV monthly 
-env.monthly <- read.csv("Data/Processed/monthly_ENV_grid_wide.csv")
-
-env.monthly$Year <- env.monthly$Year + 2000
-
-Haw_total1 <- left_join(Haw_total, env.monthly, by = c("polyID"="polyID", "Year" = "Year", "Month" = "Month"))
-
-#WOA 
-WOA.monthly <- read.csv("Data/Processed/WOA_wide.csv")
-
-Haw_total1 <- left_join(Haw_total1, WOA.monthly, by = c("polyID"="polyID", "Month" = "Month"))
-
-
-#Depth_stats 
-depth_data<- read.csv("Data/Raw/Haw_fishnet_depth.csv")
-Haw_total1 <- left_join(Haw_total1, depth_data, by = c("polyID"="POL_ID"))
-
-
-write.csv(Haw_total1, "Data/Processed/Haw_5x5_envadded.csv")
-
-```
-
-
-#look at shallow and deep polygons 
-```{r}
-library(rgdal)
-polydeep <- readOGR("~/Documents/Longline/hawaii/deep_shallow_files/", layer="HI_deep_polygons")
-
-dat_deep <- polydeep@data
-
-polyshallow <- readOGR("~/Documents/Longline/hawaii/deep_shallow_files/", layer="HI_shallow_polygons")
-
-dat_shallow <- polyshallow@data
-
-dat_all <- rbind(dat_deep, dat_shallow)
-dat_all_test <- dat_all %>% dplyr::select(Tuna__Bige, OBJECTID)
-dat_all_test$Tuna__Bige <- as.numeric(as.character(dat_all_test$Tuna__Bige))/as.numeric(as.character(dat_all$NUM_HKS_SE))
-
-
-
-
-```
-
-#_____________
 ```{r}
 #Load in and Prepare Data
 shallow <- read.csv("Data/Raw/shallow.csv", na.strings=c(-9999, -9999), header = TRUE, sep = ",")
@@ -400,8 +266,7 @@ formula <- as.formula(~water.temp.0000m.mean*aqua.CHL.chlor.a.mean + OXY.MESO *
                         water.temp.0000m.mean*salinity.0000m.mean + 
                         salinity.0000m.mean*aqua.CHL.chlor.a.mean)
 
-formula <- as.formula(~water.temp.0000m.mean +aqua.CHL.chlor.a.mean + OXY.MESO + 
-                        salinity.0000m.mean + DEPTH.RANGE)
+formula <- as.formula(~water.temp.0000m.mean +aqua.CHL.chlor.a.mean + OXY.MESO + salinity.0000m.mean*aqua.CHL.chlor.a.mean + DEPTH.RANGE)
 
 cdex <- c("BUMn", "MLSn", "SFAn", "SSPn", "SWOn", "ALBn", "BETn", "SKJn", "YFTn") # Condition on market ctach             # condition on 2 species
 ndex <-  c("THRn", "BSHn", "OCSn", "MAKn", "FALn") # predict bycatch
@@ -420,17 +285,16 @@ save(out, file = "Models/trained_hawaii.rdata")
 ##set up train and test data
 ```{r}
 ###1.1.2 Split into Testing and Training Data
-
+#haw_dat <- read.csv("Data/Processed/Haw_5x5_envadded.csv")
 smp_size <- floor(0.80 * nrow(haw_dat))
 set.seed(118)
 train_ind <- sample(seq_len(nrow(haw_dat)), size = smp_size)
 
 train <- haw_dat[train_ind, ] #Model Fitting
 test <- haw_dat[-train_ind, ] #For out of Sample data
-
 specNames <- c("ALBn", "BETn", "SKJn", "YFTn", "BUMn", "MLSn", "SFAn","SSPn","SWOn", "THRn", "BSHn", "OCSn", "MAKn", "FALn")
 
-xnames <- c("Month","Year","seamount.count","MIN.DEPTH","DEPTH.MEAN","DEPTH.RANGE","MAX.DEPTH","TEMP.0M","TEMP.EPI",
+xnames <- c("Month","Year","MIN.DEPTH","DEPTH.MEAN","DEPTH.RANGE","MAX.DEPTH","TEMP.0M","TEMP.EPI",
             "OXY.0M","OXY.EPI","OXY.MESO","salinity.0000m.mean","surf.el.mean","water.temp.0000m.mean","aqua.CHL.chlor.a.mean")
 
 xdata <- train[,xnames] #Model Fitting Xdata
@@ -452,6 +316,12 @@ haw_train_y <- ydata
 haw_test_y <- yy
 
 
+#there are some NAs 
+test <- cbind(haw_test_x, haw_test_y)
+test <- test[complete.cases(test),]
+haw_test_x <- test[xnames]
+haw_test_y <- test[specNames]
+
 ```
 
 ##train model
@@ -466,18 +336,21 @@ formula <- as.formula(~water.temp.0000m.mean*aqua.CHL.chlor.a.mean + OXY.MESO *
 formula <- as.formula(~water.temp.0000m.mean +aqua.CHL.chlor.a.mean + OXY.MESO + 
                         salinity.0000m.mean + DEPTH.RANGE)
 
+formula <- as.formula(~water.temp.0000m.mean +aqua.CHL.chlor.a.mean + 
+                        salinity.0000m.mean)
+
 cdex <- c("BUMn", "MLSn", "SFAn", "SSPn", "SWOn", "ALBn", "BETn", "SKJn", "YFTn") # Condition on market ctach             # condition on 2 species
 ndex <-  c("THRn", "BSHn", "OCSn", "MAKn", "FALn") # predict bycatch
 
-ml  <- list(ng = 200, burnin = 80, typeNames = 'CA')#, effort = effort)#, effort = effort) # fit the non-holdouts
+ml  <- list(ng = 2000, burnin = 800, typeNames = 'CA')#, effort = effort)#, effort = effort) # fit the non-holdouts
 ml$REDUCT <- FALSE
 x <- model.matrix(formula, xdata)
 qr(x)$rank
 dim(x)
 
 out<- gjam(formula = formula, haw_train_x, haw_train_y, modelList = ml)
-save(out, file = "Models/trained_hawaii.rdata")
-load("Models/trained_hawaii.rdata")
+save(out, file = "Models/trained_hawaii_origformula.rdata")
+load("Models/trained_hawaii_origformula.rdata")
 ```
 
 
@@ -616,7 +489,7 @@ IATTC_CPUE_est <- read.csv("IATTC_Catch_Estimated.csv") #IATTC predicted in catc
 
 #this is for mapping 
 world <- ne_countries(scale = "medium", returnclass = "sf") #world shapefile
-
+getwd()
 ```
 
 
@@ -1207,7 +1080,6 @@ pp <- ggplot()  + geom_point(data = dat, aes(x = obs,y = pred), size = .2, color
 
 ggarrange(p, pp, common.legend = TRUE, legend = "bottom")+ ggsave(filename= "Figures/FigureS2.jpg", plot=last_plot(), width = 25, height=15, units=c("cm"), dpi=500)
 ```
-
 ###bycatch loop 
 ```{r}
 steps<- c("Thresher shark", "Blue shark", "Oceanic whitetip", "Mako sharks", "Silky shark")
@@ -1264,17 +1136,17 @@ rmseval <- Metrics::rmse(actual = dat$obs, predicted = dat$pred) #to put on the 
 meany <- mean(dat$obs) #to put on the graph
 rmseval2 <- Metrics::rmse(actual = df$x, predicted = df$y) #to put on the graph
 meany2 <- mean(df$y) #to put on the graph
-ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "grey50", alpha = .3) +
-  # geom_point(data = df,aes(x = x,y = y, colour=(ymax-ymin)/2)) + 
-  # geom_errorbar(data = df,aes(x = x,y = y, ymin = ymin,ymax = ymax,width=0.1,colour = ((ymax-ymin)/2))) + 
-  geom_abline(linetype=2) + 
-  scale_color_gradientn(colours = pal) +  
+rss <- sum((dat$yp - dat$yo) ^ 2)  ## residual sum of squares
+tss <- sum((dat$yp - mean(dat$yo)) ^ 2)  ## total sum of squares
+rsq <- 1 - rss/tss
+
+ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "grey50", alpha = .3)+
+  geom_abline(linetype=2) +  
   theme_Publication() + 
-  xlim(c(0,max(dat$yp)))+ 
-  ylim(c(0,max(dat$yp)))+
-  labs(colour = "+/- 1 SD") + 
-  annotate(geom="text", color = "red", x=max(dat$yp)/2, y=max(dat$yp), label=paste0("RMSPE =", round(rmseval, digits = 2))) + 
-  annotate(geom="text", color = "red", x=max(dat$yp)/2, y=max(dat$yp)-(max(dat$yp)/10), label=paste0("Mean =", round(meany, digits = 2))) + 
+  xlim(c(0,max(dat$yp)/5))+ 
+  ylim(c(0,max(dat$yp)/5)) + 
+  annotate(geom="text", color = "red", x=max(dat$yp)/10, y=max(dat$yp)/8, label=paste0("RMSPE =", round(rmseval, digits = 2))) + 
+  annotate(geom="text", color = "red", x=max(dat$yp)/10, y=(max(dat$yp)/10), label=paste0("R2 =", round(rsq, digits = 2))) + 
   theme(aspect.ratio = 1) +
   labs(y = expression(paste("Predicted catch (CPUE)")), x = expression(paste("Reported catch (CPUE)")),title=name)
 #ggsave(ploty, file=paste0("plot_", i,".jpg"), width = 10, height=10, units=c("cm"), dpi=500)
@@ -1307,30 +1179,203 @@ rmseval2 <- Metrics::rmse(actual = dat$obs, predicted = dat$pred) #to put on the
 meany2 <- mean(dat$obs) #to put on the graph
 rmseval <- Metrics::rmse(actual = df$x, predicted = df$y) #to put on the graph
 meany <- mean(df$y) #to put on the graph
-ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "grey50", alpha = .3) + 
+rss <- sum((dat$yp - dat$yo) ^ 2)  ## residual sum of squares
+tss <- sum((dat$yp - mean(dat$yo)) ^ 2)  ## total sum of squares
+rsq <- 1 - rss/tss
+
+ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "grey50", alpha = .3)+
   geom_abline(linetype=2) +  
   theme_Publication() + 
-  xlim(c(0,max(dat$yp)))+ 
-  ylim(c(0,max(dat$yp))) + 
-  annotate(geom="text", color = "red", x=max(dat$yp)/2, y=max(dat$yp), label=paste0("RMSPE =", round(rmseval, digits = 2))) + 
-  annotate(geom="text", color = "red", x=max(dat$yp)/2, y=max(dat$yp)-(max(dat$yp)/10), label=paste0("Mean =", round(meany, digits = 2))) + 
+  xlim(c(0,max(dat$yp)/5))+ 
+  ylim(c(0,max(dat$yp)/5)) + 
+  annotate(geom="text", color = "red", x=max(dat$yp)/10, y=max(dat$yp)/8, label=paste0("RMSPE =", round(rmseval, digits = 2))) + 
+  annotate(geom="text", color = "red", x=max(dat$yp)/10, y=(max(dat$yp)/10), label=paste0("R2 =", round(rsq, digits = 2))) + 
   theme(aspect.ratio = 1) +
   labs(y = expression(paste("Predicted catch (CPUE)")), x = expression(paste("Reported catch (CPUE)")),title=name)
 #ggsave(ploty, file=paste0("plot_", i,".jpg"), width = 10, height=10, units=c("cm"), dpi=500)
 plot_list[[i]] <- ploty
 }
 
-
 do.call(ggarrange, c(plot_list[1:length(cdex)], common.legend = TRUE, legend = "bottom"))+ ggsave(filename= "Figures/FigureS_unconditional_outofsample_haw.jpg", plot=last_plot(), width = 30, height=25, units=c("cm"), dpi=500)
 ```
 
+###all unconditional clustered
+This is to make sure that the model does an okay job at predicting target species in hawaii (will be doing this on IATTC as well)
+
+```{r}
+
+steps<- c("Albacore", "Bigeye Tuna", "Skipjack", "Yellowfin", " Blue Marlin", "Striped Marlin", "Sailfish", "Spearfish", "Swordfish", "Thresher shark", "Blue shark", "Oceanic whitetip", "Mako sharks", "Silky shark")
+
+adex <- c("ALBn", "BETn", "SKJn", "YFTn", "BUMn", "MLSn", "SFAn","SSPn","SWOn", "THRn", "BSHn", "OCSn", "MAKn", "FALn")
+
+load("Models/trained_hawaii.rdata")
+
+xnames <- rownames(out[["parameters"]][["sensTable"]])
+
+plot_list = list()
+
+
+
+#aggregate
+cvar <- haw_test_x[,xnames]
+minSize <- 10                   # experiment with sizes of clusters
+maxSize <- 20
+
+groups <- kmeansEqualGroups(cvar, minSize = minSize, maxSize = maxSize)
+xmean <- groups$clusterMeans
+xmean <- as.data.frame(xmean)
+xmean$cluster <- 1:nrow(xmean)
+clusters <- groups$cluster
+
+haw_test_y$cluster <- clusters
+newdata <- left_join(haw_test_y, xmean, by = "cluster")
+newy2 <- as.data.frame(newdata) %>% group_by(cluster) %>% summarise_at(adex, mean, na.rm =T)
+newy2 <- newy2[,-1]
+
+
+for(i in 1:length(steps)){
+  name <- steps[i]
+  namey <- adex[i]
+  yo = newy2[,cdex[i]] #if we want them all to match I think it needs to be in catch/1000 hooks
+yp = p1$sdList$yMu[,namey]
+yp <- as.data.frame(yp)
+yp$cluster <- clusters
+yp <- yp %>% group_by(cluster) %>% summarise(yp = mean(yp, na.rm =T))
+yp <- yp[,-1]
+dat <- cbind(yo, yp)
+colnames(dat) <- c("yo", "yp")
+rmseval2 <- Metrics::rmse(actual = dat$obs, predicted = dat$pred) #to put on the graph
+meany2 <- mean(dat$obs) #to put on the graph
+rmseval <- Metrics::rmse(actual = df$x, predicted = df$y) #to put on the graph
+meany <- mean(df$y) #to put on the graph
+rss <- sum((dat$yp - dat$yo) ^ 2)  ## residual sum of squares
+tss <- sum((dat$yp - mean(dat$yo)) ^ 2)  ## total sum of squares
+rsq <- 1 - rss/tss
+
+ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "grey50", alpha = .3)+
+  geom_abline(linetype=2) +  
+  theme_Publication() + 
+  xlim(c(0,max(dat$yp)))+ 
+  ylim(c(0,max(dat$yp))) + 
+  annotate(geom="text", color = "red", x=max(dat$yp)/5, y=max(dat$yp), label=paste0("RMSPE =", round(rmseval, digits = 2))) + 
+  annotate(geom="text", color = "red", x=max(dat$yp)/5, y=(max(dat$yp)/2), label=paste0("R2 =", round(rsq, digits = 2))) + 
+  theme(aspect.ratio = 1) +
+  labs(y = expression(paste("Predicted catch (CPUE)")), x = expression(paste("Reported catch (CPUE)")),title=name)
+#ggsave(ploty, file=paste0("plot_", i,".jpg"), width = 10, height=10, units=c("cm"), dpi=500)
+plot_list[[i]] <- ploty
+}
+
+do.call(ggarrange, c(plot_list[1:length(cdex)], common.legend = TRUE, legend = "bottom"))+ ggsave(filename= "Figures/FigureS_unconditional_outofsample_haw_clustered.jpg", plot=last_plot(), width = 30, height=25, units=c("cm"), dpi=500)
+```
+
 #SX Observed vs. predicted IATTC
+
+###target unconditional clustered
+This is to make sure that the model does an okay job at predicting target species IATTC 
+
+```{r}
+
+steps<- c("Albacore", "Bigeye Tuna", "Skipjack", "Yellowfin", " Blue Marlin", "Striped Marlin", "Sailfish", "Spearfish", "Swordfish")
+
+cdex <- c("ALBn", "BETn", "SKJn", "YFTn", "BUMn", "MLSn", "SFAn","SSPn","SWOn")
+
+plot_list = list()
+
+#aggregate
+cvar <- IATTC_x[,xnames]
+minSize <- 10                   # experiment with sizes of clusters
+maxSize <- 20
+
+groups <- kmeansEqualGroups(cvar, minSize = minSize, maxSize = maxSize)
+xmean <- groups$clusterMeans
+xmean <- as.data.frame(xmean)
+xmean$cluster <- 1:nrow(xmean)
+clusters <- groups$cluster
+
+IATTC_y$cluster <- clusters
+newdata <- left_join(IATTC_y, xmean, by = "cluster")
+newy2 <- as.data.frame(newdata) %>% group_by(cluster) %>% summarise_at(adex, mean, na.rm =T)
+newy2 <- newy2[,-1]
+
+for(i in 1:length(steps)){
+  name <- steps[i]
+  namey <- cdex[i]
+  yo = newy2[,namey]
+yp = p3$sdList$yMu[,namey]
+yp <- as.data.frame(yp)
+yp$cluster <- clusters
+yp <- yp %>% group_by(cluster) %>% summarise(yp = mean(yp, na.rm =T))
+yp <- yp[,-1]
+dat <- cbind(yo, yp)
+colnames(dat) <- c("yo", "yp")
+dat <- as.data.frame(dat)
+rmseval <- Metrics::rmse(actual = dat$yo, predicted = dat$yp) #to put on the graph
+meany <- mean(dat$yo) #to put on the graph
+rss <- sum((dat$yp - dat$yo) ^ 2)  ## residual sum of squares
+tss <- sum((dat$yp - mean(dat$yo)) ^ 2)  ## total sum of squares
+rsq <- 1 - rss/tss
+
+ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "grey50", alpha = .3)+
+  geom_abline(linetype=2) +  
+  theme_Publication() + 
+  xlim(c(0,max(dat$yp)/5))+ 
+  ylim(c(0,max(dat$yp)/5)) + 
+  annotate(geom="text", color = "red", x=max(dat$yp)/10, y=max(dat$yp)/8, label=paste0("RMSPE =", round(rmseval, digits = 2))) + 
+  annotate(geom="text", color = "red", x=max(dat$yp)/10, y=(max(dat$yp)/10), label=paste0("R2 =", round(rsq, digits = 2))) + 
+  theme(aspect.ratio = 1) +
+  labs(y = expression(paste("Predicted catch (CPUE)")), x = expression(paste("Reported catch (CPUE)")),title=name)
+#ggsave(ploty, file=paste0("plot_", i,".jpg"), width = 10, height=10, units=c("cm"), dpi=500)
+plot_list[[i]] <- ploty
+}
+
+do.call(ggarrange, c(plot_list[1:length(plot_list)], common.legend = TRUE, legend = "bottom"))+ ggsave(filename= "Figures/FigureS_unconditional_outofsample_IATTC_clustered.jpg", plot=last_plot(), width = 30, height=25, units=c("cm"), dpi=500)
+```
 
 ###target unconditional 
 This is to make sure that the model does an okay job at predicting target species IATTC 
 
 ```{r}
 
+steps<- c("Albacore", "Bigeye Tuna", "Skipjack", "Yellowfin", " Blue Marlin", "Striped Marlin", "Sailfish", "Spearfish", "Swordfish")
+
+cdex <- c("ALBn", "BETn", "SKJn", "YFTn", "BUMn", "MLSn", "SFAn","SSPn","SWOn")
+
+plot_list = list()
+
+for(i in 1:length(steps)){ 
+  name <- steps[i]
+  namey <- cdex[i]
+  yo = IATTC_y[,namey]
+yp = p3$sdList$yMu[,namey]
+dat <- cbind(yo, yp)
+dat <- as.data.frame(dat)
+rmseval <- Metrics::rmse(actual = dat$yo, predicted = dat$yp) #to put on the graph
+meany <- mean(dat$yo) #to put on the graph
+rss <- sum((dat$yp - dat$yo) ^ 2)  ## residual sum of squares
+tss <- sum((dat$yp - mean(dat$yo)) ^ 2)  ## total sum of squares
+rsq <- 1 - rss/tss
+
+ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "grey50", alpha = .3)+
+  geom_abline(linetype=2) +  
+  theme_Publication() + 
+  xlim(c(0,max(dat$yp)/5))+ 
+  ylim(c(0,max(dat$yp)/5)) + 
+  annotate(geom="text", color = "red", x=max(dat$yp)/10, y=max(dat$yp)/8, label=paste0("RMSPE =", round(rmseval, digits = 2))) + 
+  annotate(geom="text", color = "red", x=max(dat$yp)/10, y=(max(dat$yp)/10), label=paste0("R2 =", round(rsq, digits = 2))) + 
+  theme(aspect.ratio = 1) +
+  labs(y = expression(paste("Predicted catch (CPUE)")), x = expression(paste("Reported catch (CPUE)")),title=name)
+#ggsave(ploty, file=paste0("plot_", i,".jpg"), width = 10, height=10, units=c("cm"), dpi=500)
+plot_list[[i]] <- ploty
+}
+
+do.call(ggarrange, c(plot_list[1:length(plot_list)], common.legend = TRUE, legend = "bottom"))+ ggsave(filename= "Figures/FigureS_unconditional_outofsample_IATTC1.jpg", plot=last_plot(), width = 30, height=25, units=c("cm"), dpi=500)
+```
+
+
+###US only
+Same as above but just the US fleet (theoretically this should be the same as hawaii so should do a good job)
+
+```{r}
 steps<- c("Albacore", "Bigeye Tuna", "Skipjack", "Yellowfin", " Blue Marlin", "Striped Marlin", "Sailfish", "Spearfish", "Swordfish")
 
 cdex <- c("ALBn", "BETn", "SKJn", "YFTn", "BUMn", "MLSn", "SFAn","SSPn","SWOn")
@@ -1344,20 +1389,305 @@ for(i in 1:length(steps)){
 yp = p3$sdList$yMu[,namey]
 dat <- cbind(yo, yp)
 dat <- as.data.frame(dat)
+dat$Flag <- IATTC_x$Flag
+dat <- dat[dat$Flag=="USA",]
 rmseval <- Metrics::rmse(actual = dat$yo, predicted = dat$yp) #to put on the graph
 meany <- mean(dat$yo) #to put on the graph
+rss <- sum((dat$yp - dat$yo) ^ 2)  ## residual sum of squares
+tss <- sum((dat$yp - mean(dat$yo)) ^ 2)  ## total sum of squares
+rsq <- 1 - rss/tss
+
 ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "grey50", alpha = .3)+
   geom_abline(linetype=2) +  
   theme_Publication() + 
   xlim(c(0,max(dat$yp)/5))+ 
   ylim(c(0,max(dat$yp)/5)) + 
   annotate(geom="text", color = "red", x=max(dat$yp)/10, y=max(dat$yp)/8, label=paste0("RMSPE =", round(rmseval, digits = 2))) + 
-  annotate(geom="text", color = "red", x=max(dat$yp)/10, y=(max(dat$yp)/10), label=paste0("Mean =", round(meany, digits = 2))) + 
+  annotate(geom="text", color = "red", x=max(dat$yp)/10, y=(max(dat$yp)/10), label=paste0("R2 =", round(rsq, digits = 2))) + 
   theme(aspect.ratio = 1) +
   labs(y = expression(paste("Predicted catch (CPUE)")), x = expression(paste("Reported catch (CPUE)")),title=name)
 #ggsave(ploty, file=paste0("plot_", i,".jpg"), width = 10, height=10, units=c("cm"), dpi=500)
 plot_list[[i]] <- ploty
 }
 
-do.call(ggarrange, c(plot_list[1:length(plot_list)], common.legend = TRUE, legend = "bottom"))+ ggsave(filename= "Figures/FigureS_unconditional_outofsample_IATTC.jpg", plot=last_plot(), width = 30, height=25, units=c("cm"), dpi=500)
+
+do.call(ggarrange, c(plot_list[1:length(plot_list)], common.legend = TRUE, legend = "bottom"))+ ggsave(filename= "Figures/FigureS_unconditional_outofsample_IATTC_US.jpg", plot=last_plot(), width = 30, height=25, units=c("cm"), dpi=500)
 ```
+
+
+
+
+##holdout
+```{r}
+#testing 
+
+
+`Blue Marlin` <- readRDS("Holdout_BUMn_Conditional 2.Rdata")
+`Striped Marlin`<- readRDS("Holdout_MLSn_Conditional 2.Rdata")
+Sailfish <- readRDS("Holdout_SFAn_Conditional 2.Rdata")
+Spearfish <- readRDS("Holdout_SSPn_Conditional 2.Rdata")
+Albacore <- readRDS("Holdout_ALBn_Conditional 2.Rdata")
+`Bigeye Tuna` <- readRDS("Holdout_BETn_Conditional 2.Rdata")
+Skipjack <- readRDS("Holdout_SKJn_Conditional 2.Rdata")
+Yellowfin <- readRDS("Holdout_YFTn_Conditional 2.Rdata")
+Swordfish <- readRDS("Holdout_SWOn_Conditional 2.Rdata")
+
+files <- list(Albacore, `Bigeye Tuna`, Skipjack, Yellowfin,  `Blue Marlin`, `Striped Marlin`, Sailfish, Spearfish, Swordfish)
+
+steps<- c("Albacore", "Bigeye Tuna", "Skipjack", "Yellowfin", " Blue Marlin", "Striped Marlin", "Sailfish", "Spearfish", "Swordfish")
+
+cdex <- c("ALBn", "BETn", "SKJn", "YFTn", "BUMn", "MLSn", "SFAn","SSPn","SWOn")
+
+#names <- "ALBn"
+#c("THRn", "BSHn", "OCSn", "MAKn", "FALn")
+
+plot_list = list()
+
+for(i in 1:length(steps)){
+  name <- steps[i]
+  yo = IATTC_y[,cdex[i]] #if we want them all to match I think it needs to be in catch/1000 hooks
+yp = files[i][[1]]$sdList$yMu[,cdex]
+yp <- yp[,cdex[i]]
+dat <- cbind(yo, yp)
+xlim = NULL
+ylim = NULL
+if(is.data.frame(yo))yo <- as.matrix(yo) 
+if(is.data.frame(yp))yp <- as.matrix(yp) 
+yo <- as.vector(yo)
+yp <- as.vector(yp)
+yo <- sqrt(yo)
+yp <- sqrt(yp)
+bins <- quantile(yo, c(.0001, .9999), na.rm=T) #cutting out bottom and top .01%
+bins <- seq(bins[1], bins[2], length=50) #gives us 50 bins between bottom and top percets
+xbin <- findInterval(yo, bins, all.inside = T) #sorting yo into the bins
+ww   <- which( table(xbin) < 20 ) #finding bins that contain less than 20 data points
+if(length(ww) > 0){
+  bins <- bins[-ww]
+  xbin <- findInterval(yo, bins, all.inside = T)
+}
+ibin <- findInterval(yo, bins, all.inside = T)
+mu   <- tapply( yp, ibin, mean)
+mids <- (bins[-length(bins)] + bins[-1])/2
+nb <- length(mids)
+mids <- mids[-nb]
+mu   <- mu[-nb]
+if(length(mu) != length(mids)){# not the same length
+  mids = mids[1:length(mu)]
+} 
+if(is.null(ylim))ylim <- c(0, max(yp))
+if(is.null(xlim))xlim <- c(0, 1.1*max(mids))
+# calculate quantiles along x axis (yp)
+qq   <- tapply( yp, ibin, quantile, pnorm(c(-1.96, -1, 1, 1.96)) )
+qq   <- matrix( unlist(qq), ncol = 4, byrow=T)
+qq   <- qq[-nb,]
+#qq variables hold data ranges like so: qq[,1] = 95% min, qq[,2] = 68% min, qq[,3] = 68% max, qq[,4] = 98% max
+# set up a dataframe for plotting
+df <- data.frame(x = mids,
+                 y = mu,
+                 ymin = qq[,2],
+                 ymax = qq[,3])
+dat <- as.data.frame(dat)
+rmseval <- Metrics::rmse(actual = dat$yo, predicted = dat$yp) #to put on the graph
+meany <- mean(dat$yo) #to put on the graph
+rss <- sum((dat$yp - dat$yo) ^ 2)  ## residual sum of squares
+tss <- sum((dat$yp - mean(dat$yo)) ^ 2)  ## total sum of squares
+rsq <- 1 - rss/tss
+
+ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "grey50", alpha = .3) +
+  geom_point(data = df,aes(x = x,y = y, colour=(ymax-ymin)/2)) + 
+  geom_errorbar(data = df,aes(x = x,y = y, ymin = ymin,ymax = ymax,width=0.1,colour = ((ymax-ymin)/2))) + 
+  geom_abline(linetype=2) + 
+  scale_color_gradientn(colours = pal) +  
+  theme_Publication() + 
+  xlim(c(0,max(dat$yp)/5))+ 
+  ylim(c(0,max(dat$yp)/5)) + 
+  annotate(geom="text", color = "red", x=max(dat$yp)/10, y=max(dat$yp)/8, label=paste0("RMSPE =", round(rmseval, digits = 2))) + 
+  annotate(geom="text", color = "red", x=max(dat$yp)/10, y=(max(dat$yp)/10), label=paste0("R2 =", round(rsq, digits = 2))) + 
+  theme(aspect.ratio = 1) +
+  labs(y = expression(paste("Predicted catch (Individuals/1000 hooks)"^"1/2")), x = expression(paste("Reported catch (Individuals/1000 hooks)"^"1/2")),title=name)
+#ggsave(ploty, file=paste0("plot_", i,".jpg"), width = 10, height=10, units=c("cm"), dpi=500)
+plot_list[[i]] <- ploty
+}
+
+
+do.call(ggarrange, c(plot_list[1:9], common.legend = TRUE, legend = "bottom"))+ ggsave(filename= "Figures/FigureHoldout.jpg", plot=last_plot(), width = 45, height=35, units=c("cm"), dpi=500)
+
+```
+
+
+#____________
+something isn't right with this data. 
+###look at the data I have 
+```{r}
+Deep <- read_excel("~/Documents/Longline/hawaii/HawaiiLongline Data 2004 - 201920200709082349/PhD student Hawaii Longline Data Request (Deep Set).xlsx")
+
+Shallow <- read_excel("~/Documents/Longline/hawaii/HawaiiLongline Data 2004 - 201920200709082349/PhD student Hawaii Longline Data Request (Shallow Set).xlsx")
+
+#select out info I want 
+Deep <- Deep %>% dplyr::select(HAUL_BEGIN_YEAR, HAUL_BEGIN_MONTH, HAUL_BEGIN_LAT_GRID, HAUL_BEGIN_LON_GRID, NUM_HKS_SET, YELLOWFIN_TUNA, SWORDFISH, STRIPED_MARLIN, BLUE_MARLIN, SHORTBILL_SPEARFISH, SAILFISH, BIGEYE_TUNA, SKIPJACK_TUNA, ALBACORE_TUNA, BLUE_SHARK, SILKY_SHARK, UNID_MAKO_SHARK, SHORTFIN_MAKO_SHARK, LONGFIN_MAKO_SHARK, UNID_THRESHER_SHARK, BIGEYE_THRESHER_SHARK, PELAGIC_THRESHER_SHARK, COMMON_THRESHER_SHARK, OCEANIC_WHITETIP_SHARK)
+
+Deep$MAKn <- Deep$UNID_MAKO_SHARK + Deep$LONGFIN_MAKO_SHARK + Deep$SHORTFIN_MAKO_SHARK
+Deep$THRn <- Deep$UNID_THRESHER_SHARK + Deep$BIGEYE_THRESHER_SHARK + Deep$COMMON_THRESHER_SHARK + Deep$PELAGIC_THRESHER_SHARK
+
+Shallow <- Shallow %>% dplyr::select(HAUL_BEGIN_YEAR, HAUL_BEGIN_MONTH, HAUL_BEGIN_LAT_GRID, HAUL_BEGIN_LON_GRID, NUM_HKS_SET, YELLOWFIN_TUNA, SWORDFISH, STRIPED_MARLIN, BLUE_MARLIN, SHORTBILL_SPEARFISH, SAILFISH, BIGEYE_TUNA, SKIPJACK_TUNA, ALBACORE_TUNA, BLUE_SHARK, SILKY_SHARK, UNID_MAKO_SHARK, SHORTFIN_MAKO_SHARK, LONGFIN_MAKO_SHARK, UNID_THRESHER_SHARK, BIGEYE_THRESHER_SHARK, PELAGIC_THRESHER_SHARK, COMMON_THRESHER_SHARK, OCEANIC_WHITETIP_SHARK)
+
+Shallow$MAKn <- Shallow$UNID_MAKO_SHARK + Shallow$LONGFIN_MAKO_SHARK + Shallow$SHORTFIN_MAKO_SHARK
+Shallow$THRn <- Shallow$UNID_THRESHER_SHARK + Shallow$BIGEYE_THRESHER_SHARK + Shallow$COMMON_THRESHER_SHARK + Shallow$PELAGIC_THRESHER_SHARK
+
+Shallow <- Shallow %>% dplyr::select(HAUL_BEGIN_YEAR, HAUL_BEGIN_MONTH, HAUL_BEGIN_LAT_GRID, HAUL_BEGIN_LON_GRID, NUM_HKS_SET, YELLOWFIN_TUNA, SWORDFISH, STRIPED_MARLIN, BLUE_MARLIN, SHORTBILL_SPEARFISH, SAILFISH, BIGEYE_TUNA, SKIPJACK_TUNA, ALBACORE_TUNA, BLUE_SHARK, SILKY_SHARK, MAKn, THRn, OCEANIC_WHITETIP_SHARK)
+
+Deep <- Deep %>% dplyr::select(HAUL_BEGIN_YEAR, HAUL_BEGIN_MONTH, HAUL_BEGIN_LAT_GRID, HAUL_BEGIN_LON_GRID, NUM_HKS_SET, YELLOWFIN_TUNA, SWORDFISH, STRIPED_MARLIN, BLUE_MARLIN, SHORTBILL_SPEARFISH, SAILFISH, BIGEYE_TUNA, SKIPJACK_TUNA, ALBACORE_TUNA, BLUE_SHARK, SILKY_SHARK, MAKn, THRn, OCEANIC_WHITETIP_SHARK)
+
+specNames <- c("ALBn", "BETn", "SKJn", "YFTn", "BUMn", "MLSn", "SFAn","SSPn","SWOn", "THRn", "BSHn", "OCSn", "MAKn", "FALn")
+
+colnames(Shallow) <- c("HAUL_BEGIN_YEAR", "HAUL_BEGIN_MONTH", "HAUL_BEGIN_LAT_GRID", "HAUL_BEGIN_LON_GRID", "NUM_HKS_SET",  "YFTn", "SWOn", "MLSn", "BUMn", "SSPn", "SFAn","BETn","SKJn","ALBn","BSHn", "FALn", "MAKn","THRn","OCSn")
+
+
+
+colnames(Deep) <- c("HAUL_BEGIN_YEAR", "HAUL_BEGIN_MONTH", "HAUL_BEGIN_LAT_GRID", "HAUL_BEGIN_LON_GRID", "NUM_HKS_SET",  "YFTn", "SWOn", "MLSn", "BUMn", "SSPn", "SFAn","BETn","SKJn","ALBn","BSHn", "FALn", "MAKn","THRn","OCSn")
+
+
+
+Haw_total <- rbind(Deep, Shallow)
+Haw_total$NUM_HKS_SET <- as.numeric(Haw_total$NUM_HKS_SET)
+Haw_total <- Haw_total[!is.na(Haw_total$NUM_HKS_SET),]
+
+#lots of repeats (also add shallow and deep together)
+Haw_total <- Haw_total %>% group_by(HAUL_BEGIN_YEAR, HAUL_BEGIN_MONTH, HAUL_BEGIN_LAT_GRID, HAUL_BEGIN_LON_GRID) %>% summarise_all(sum, na.rm=TRUE)
+
+
+#combine with some ENV data. 
+Haw_total <- Haw_total %>% separate(HAUL_BEGIN_LAT_GRID, c("LatA","LatB"), sep = "to")
+Haw_total[Haw_total == "NULL"] = NA
+
+Haw_total <- Haw_total %>% separate(HAUL_BEGIN_LON_GRID, c("LonA","LonB"), sep = "to")
+
+Haw_total$LatA <- as.numeric(Haw_total$LatA)
+Haw_total$LatB <- as.numeric(Haw_total$LatB)
+Haw_total$LonA <- as.numeric(Haw_total$LonA)
+Haw_total$LonB <- as.numeric(Haw_total$LonB)
+
+Haw_total$Mean_lat <- (Haw_total$LatA + Haw_total$LatB)/2
+Haw_total$Mean_lat <- Haw_total$Mean_lat + .00005
+Haw_total$Mean_lon <- (Haw_total$LonA + Haw_total$LonB)/2
+
+
+
+
+Haw_total$Year <- as.numeric(Haw_total$HAUL_BEGIN_YEAR)
+Haw_total$Month <- lapply(Haw_total$HAUL_BEGIN_MONTH,function(x) grep(paste("(?i)",x,sep=""),month.abb))
+Haw_total$Month <- as.numeric(Haw_total$Month)
+
+Haw_total$LAT_ROUND <- round(Haw_total$Mean_lat, digits = 0)
+Haw_total$LON_ROUND <- round(Haw_total$Mean_lon, digits = 0) -3
+
+Haw_total_y <- Haw_total[,cdex]
+
+Haw_y_cpue <- Haw_total_y/Haw_total$NUM_HKS_SET
+#these data go from .02 to 0. Different from what Guillermo gave me
+summary(Haw_y_cpue) #mine
+summary(haw_y) #gs
+summary(IATTC_y)
+
+#look at just US IATTC
+IATTC_y$Flag <- IATTC_x$Flag
+IATTC_y <- IATTC_y[IATTC_y$Flag=="USA",]
+hist(IATTC_y$SWOn, breaks = 50)
+
+hist(Haw_y_cpue$SWOn,breaks = 50)
+hist(haw_y$SWOn,breaks = 50)
+
+
+write.csv(Haw_total, "Haw_5x5.csv")
+```
+
+###add in xdata 
+
+```{r}
+Haw_fishnet_ID <- read.csv("Data/Processed/haw_poly_info.csv")
+Haw_total <- read.csv("Data/Processed/Haw_5x5.csv")
+Haw_total$polyID <- Haw_fishnet_ID$Pol_ID
+
+#add in ENV monthly 
+env.monthly <- read.csv("Data/Processed/monthly_ENV_grid_wide.csv")
+
+env.monthly$Year <- env.monthly$Year + 2000
+
+Haw_total1 <- left_join(Haw_total, env.monthly, by = c("polyID"="polyID", "Year" = "Year", "Month" = "Month"))
+
+#WOA 
+WOA.monthly <- read.csv("Data/Processed/WOA_wide.csv")
+
+Haw_total1 <- left_join(Haw_total1, WOA.monthly, by = c("polyID"="polyID", "Month" = "Month"))
+
+
+#Depth_stats 
+depth_data<- read.csv("Data/Raw/Haw_fishnet_depth.csv")
+Haw_total1 <- left_join(Haw_total1, depth_data, by = c("polyID"="POL_ID"))
+
+
+
+#change column names 
+
+xdata <- Haw_total1[31:50] 
+colnames(xdata) <- c("salinity.0000m.mean", "surf.el.mean", "tke", "water.temp.0000m.mean", "aqua.CHL.chlor.a.mean", "X", "OXY.EPI", "OXY.MESO", "OXY.0M" , "TEMP.0M", "TEMP.EPI", "TEMP.MESO", "COUNT", "AREA", "MIN.DEPTH", "MAX.DEPTH", "DEPTH.RANGE", "DEPTH.MEAN", "DEPTH.STD", "DEPTH.SUM")
+
+other <- Haw_total1[1:30]
+other_1 <- other[23:29]
+other_1$NUM_HKS_SET <- other$NUM_HKS_SET
+ydata <- other[specNames] 
+ydata <- ydata/Haw_total1$NUM_HKS_SET
+
+Haw_total1 <- cbind(xdata, other_1, ydata)
+
+
+write.csv(Haw_total1, "Data/Processed/Haw_5x5_envadded.csv")
+
+```
+
+
+#look at shallow and deep polygons 
+```{r}
+library(rgdal)
+polydeep <- readOGR("~/Documents/Longline/hawaii/deep_shallow_files/", layer="HI_deep_polygons")
+
+dat_deep <- polydeep@data
+
+polyshallow <- readOGR("~/Documents/Longline/hawaii/deep_shallow_files/", layer="HI_shallow_polygons")
+
+dat_shallow <- polyshallow@data
+
+dat_all <- rbind(dat_deep, dat_shallow)
+dat_all_test <- dat_all %>% dplyr::select(Tuna__Bige, OBJECTID)
+dat_all_test$Tuna__Bige <- as.numeric(as.character(dat_all_test$Tuna__Bige))/as.numeric(as.character(dat_all$NUM_HKS_SE))
+
+
+
+
+```
+
+#_____________
+
+
+```{r}
+load("Models/trained_hawaii_origformula.rdata") #this is on original CPUE (G) and the long forumula listed below
+# ~water.temp.0000m.mean*aqua.CHL.chlor.a.mean + OXY.MESO * 
+#                         salinity.0000m.mean + aqua.CHL.chlor.a.mean * OXY.MESO +
+#                         aqua.CHL.chlor.a.mean * DEPTH.RANGE + OXY.MESO*DEPTH.RANGE +
+#                         water.temp.0000m.mean*salinity.0000m.mean + 
+#                         salinity.0000m.mean*aqua.CHL.chlor.a.mean
+
+load("Models/trained_hawaii_simp.rdata") #this is on original CPUE (G) and a simplified formula 
+# water.temp.0000m.mean + aqua.CHL.chlor.a.mean + salinity.0000m.mean
+
+load("Models/trained_hawaii.rdata") #this is on original CPUE (G) and a simplified formula 
+# ~water.temp.0000m.mean + aqua.CHL.chlor.a.mean + OXY.MESO + salinity.0000m.mean + DEPTH.RANGE
+
+load("Models/trained_hawaii_5x5.rdata")#this is my CPUE (5x5) and a simplified formula 
+# ~water.temp.0000m.mean + aqua.CHL.chlor.a.mean + OXY.MESO + salinity.0000m.mean + DEPTH.RANGE
+
+load("Models/trained_hawaii_5x5_simp2.rdata")#this is my CPUE (5x5) and a simplified formula 
+# ~water.temp.0000m.mean + aqua.CHL.chlor.a.mean + salinity.0000m.mean + OXY.MESO
+
+```
+
