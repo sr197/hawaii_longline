@@ -342,7 +342,72 @@ plotPars <- list(PLOTALLY = T, SMALLPLOTS = T, GRIDPLOTS = T,
 gjamPlot(out, plotPars = plotPars) #jim said to look at inverse prediction 
 load("Models/overlap_full.rdata")
 ```
+##north of 0 lat 
+note if you run it with all of the data, R fails each time. 
+```{r}
+IATTC_dat <- cbind(IATTC_x, IATTC_y)
+IATTC_lat_lon <- IATTC_with_env_allyears %>% dplyr::select(RFMO_ID, LatC5, LonC5)
 
+IATTC_dat <- left_join(IATTC_dat, IATTC_lat_lon, by = c("RFMO_ID"))
+
+xnames <- c("MIN.DEPTH","DEPTH.MEAN","DEPTH.RANGE","MAX.DEPTH","TEMP.0M","TEMP.EPI",
+            "OXY.0M","OXY.EPI","OXY.MESO","salinity.0000m.mean","surf.el.mean","water.temp.0000m.mean","aqua.CHL.chlor.a.mean")
+cdex <- c("BUMn", "MLSn", "SFAn", "SSPn", "SWOn", "ALBn", "BETn", "SKJn", "YFTn")
+
+IATTC_dat_0 <- IATTC_dat %>% filter(LatC5 > 0)
+
+
+IATTC_dat_0_x <-  IATTC_dat_0[,xnames]
+IATTC_dat_0_y <-  IATTC_dat_0[,cdex]
+
+haw_0_x <-  haw_x[,xnames]
+haw_0_y <-  haw_y[,cdex]
+
+o_y <- rbind(IATTC_dat_0_y, haw_0_y)
+o_x <- rbind(IATTC_dat_0_x, haw_0_x)
+
+
+formula <- as.formula(~water.temp.0000m.mean +aqua.CHL.chlor.a.mean + salinity.0000m.mean + surf.el.mean + TEMP.0M +  TEMP.EPI + OXY.0M + OXY.EPI + OXY.MESO + MIN.DEPTH + DEPTH.MEAN + MAX.DEPTH + DEPTH.RANGE)
+
+ml  <- list(ng = 2000, burnin = 800, typeNames = 'CA')#, effort = effort)#, effort = effort) # fit the non-holdouts
+ml$REDUCT <- FALSE
+
+out<- gjam(formula = formula, o_x, o_y, modelList = ml)
+save(out, file = "Models/above0_full.rdata")
+
+plotPars <- list(PLOTALLY = T, SMALLPLOTS = T, GRIDPLOTS = T, 
+                 SAVEPLOTS = T)
+gjamPlot(out, plotPars = plotPars) #jim said to look at inverse prediction 
+load("Models/above0_full.rdata")
+```
+
+
+##selection loop
+Use the overlapping hawaii and IATTC teleost species dataset created above (overlap_y and overlap_x. 
+Use 70% of the data. 
+Run the models on all combinations of variables. 
+Predict on the remaining 30% 
+Calculate RMSE and Rsquared for each species and the total dataset. 
+
+
+```{r}
+  #rsquared 
+    # 2.1. Average of actual data
+avr_y_actual <- mean(as.numeric(as.matrix(observed[specnames[i]])))
+
+# 2.2. Total sum of squares
+ss_total <- sum((observed[specnames[i]] - avr_y_actual)^2)
+
+# 2.3. Regression sum of squares
+ss_regression <- sum((predicted[specnames[i]] - avr_y_actual)^2)
+
+# 2.4. Residual sum of squares
+ss_residuals <- sum((predicted[specnames[i]] - observed[specnames[i]])^2)
+
+# 3. R2 Score
+rsq <- 1 - (ss_residuals / ss_total)
+
+```
 
 #3. Train Hawaii 
 ##set up train and test data
@@ -407,6 +472,10 @@ formula <- as.formula(~water.temp.0000m.mean +aqua.CHL.chlor.a.mean +
 
 formula <- as.formula(~aqua.CHL.chlor.a.mean + 
                         salinity.0000m.mean + MAX.DEPTH)
+
+formula <- as.formula(~water.temp.0000m.mean + aqua.CHL.chlor.a.mean + 
+                        salinity.0000m.mean + MAX.DEPTH)
+ 
  
 
 cdex <- c("BUMn", "MLSn", "SFAn", "SSPn", "SWOn", "ALBn", "BETn", "SKJn", "YFTn") # Condition on market ctach             # condition on 2 species
@@ -419,8 +488,8 @@ qr(x)$rank
 dim(x)
 
 out<- gjam(formula = formula, haw_train_x, haw_train_y, modelList = ml)
-save(out, file = "Models/trained_hawaii_salchlamaxdepth.rdata")
-load("Models/trained_hawaii_salchlamaxdepth.rdata")
+save(out, file = "Models/trained_hawaii_tempsalchlamaxdepth.rdata")
+load("Models/trained_hawaii_tempsalchlamaxdepth.rdata")
 ```
 
 
@@ -1594,15 +1663,12 @@ IATTC_dat_overlap_y <-  IATTC_dat_overlap[,cdex]
 for(i in 1:length(steps)){
   name <- steps[i]
   namey <- cdex[i]
-  yo = IATTC_y[,namey]
+  yo = IATTC_dat_overlap_y[,namey]
 yp = p3$sdList$yMu[,namey]
 yp <- as.data.frame(yp)
 yp$Lat <- IATTC_dat$LatC5
 yp$Lon <- IATTC_dat$LonC5
 yp <- yp %>% filter(Lat > min(coords$LAT) & Lat < max(coords$LAT)& Lon > min(coords$LON) & Lon < max(coords$LON))
-yp$cluster <- clusters
-yp <- yp %>% group_by(cluster) %>% summarise(yp = mean(yp, na.rm =T))
-yp <- yp[,-1]
 
 dat <- cbind(yo, yp)
 dat <- as.data.frame(dat)
@@ -1823,10 +1889,14 @@ load("Models/trained_hawaii_tempsalchlaoxy.rdata") #this is on original CPUE (G)
 # water.temp.0000m.mean + aqua.CHL.chlor.a.mean + salinity.0000m.mean + OXY.MESO
 
 load("Models/trained_hawaii_salchlamaxdepth.rdata") #this is on original CPUE (G) and a simplified formula. These are the variables that came out as important when I ran a model on hawaii and overlapping IATTC teleosts.  
-# water.temp.0000m.mean + aqua.CHL.chlor.a.mean + salinity.0000m.mean + OXY.MESO
+# aqua.CHL.chlor.a.mean + salinity.0000m.mean + MAX.DEPTH
 
 
 load("Models/overlap_full.rdata") #this is trained on hawaii and overlapping IATTC teleosts with all of the env. variables. Jim suggested looking at the inverse prediction for x to see which variables are important for prediction. It looks like chla, salinity, and maximum depth are most closesly back-predicted to the 1:1 line. 
+
+load("Models/trained_hawaii_tempsalchlamaxdepth.rdata") #this is on original CPUE (G) and a simplified formula.
+# water.temp.0000m.mean + aqua.CHL.chlor.a.mean + salinity.0000m.mean + MAX.DEPTH
+
 
 load("Models/trained_hawaii.rdata") #this is on original CPUE (G) and a simplified formula 
 # ~water.temp.0000m.mean + aqua.CHL.chlor.a.mean + OXY.MESO + salinity.0000m.mean + DEPTH.RANGE
