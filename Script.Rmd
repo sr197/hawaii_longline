@@ -13,6 +13,8 @@ This code does the following
 ANALYSIS: 
 1. Loads in Hawaii and IATTC catch data, converts to catch per hook. 
 2. Selects the best set of variables for predicting hawaii CPUE based on the environment. 
+  - This is currently in progress, we will most likely be selecting variables based on BOTH hawaii and 
+    overlapping IATTC 
 3. Trains a gjam model with the selected variables on 80% of hawaii, tests on the remaining 20%.
   - Out of sample conditional and unconditional prediction for sharks 
   - Out of sample unconditional prediction for target species (to test if the model works well)
@@ -48,6 +50,76 @@ devtools::install_github("kassambara/ggcorrplot", force = TRUE)
 library(ggcorrplot)#for gjam output figures
 library(corrplot)#for gjam output figures
 library(lessR)#for gjam output figures
+```
+
+##Functions
+```{r}
+kmeansEqualGroups <- function(cvar,minSize,maxSize,progress=T){
+
+  # k-means clustering to approx equal size groups
+  
+  n    <- nrow(cvar)
+  nall <- maxSize*1.5
+  midSize <- mean(c(minSize,maxSize))
+  
+  if(is.null(rownames(cvar)))rownames(cvar) <- c(1:n)
+  
+  cid <- rep(1,n)
+  cvalues <- 0
+  keepRows <- c(1:n)
+  nk <- n
+  nc <- round(n/midSize,0)
+  
+  while(nk > nall){
+    
+    tmp <- kmeans(cvar[keepRows,],nc,iter.max=20)
+    ci <- tmp$cluster 
+    
+    ig   <- which(tmp$size > minSize & tmp$size < maxSize)
+    wg   <- length(ig)
+    
+    if(wg > 0){
+      
+      nb <- 1 + max(cvalues)
+      newVals <- c( nb:(nb + wg - 1) )
+      
+      mm <- match(ci,ig)
+      wm <- which(is.finite(mm))
+      
+      cid[ keepRows[wm] ] <- newVals[ mm[wm] ]
+      
+      cvalues <- c(cvalues,newVals)
+      keepRows <- keepRows[!keepRows %in% keepRows[wm] ]
+      nc <- ceiling( length(keepRows)/midSize )
+      
+    } else {
+      
+      maxSize <- maxSize + 1
+      minSize <- minSize - 1
+    }
+    
+    nk <- length(keepRows)
+    if(progress)print(nk)
+  }
+  
+  allc <- sort(unique(cid))
+  
+  out <- matrix(NA,length(allc),ncol(cvar))
+  rownames(out) <- allc
+  colnames(out) <- colnames(cvar)
+  
+  osd <- out
+  
+  for(k in 1:ncol(cvar)){
+    out[,k] <- tapply(cvar[,k],cid,mean)
+    osd[,k] <- tapply(cvar[,k],cid,sd)
+  }
+  
+  list(cluster = cid, clusterMeans = out, clusterSds = osd)
+}
+
+
+
 ```
 #ANALYSIS
 #1. Data Prep 
@@ -1396,8 +1468,8 @@ rsq <- 1 - rss/tss
 ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "black")+
   geom_abline(linetype=2) +  
   theme_Publication() + 
-  xlim(c(0,max(dat$yp)/5))+ 
-  ylim(c(0,max(dat$yp)/5)) + 
+  xlim(c(0,max(dat$yp)))+ 
+  ylim(c(0,max(dat$yp))) + 
   annotate(geom="text", color = "red", x=max(dat$yp)/10, y=max(dat$yp)/8, label=paste0("RMSPE =", round(rmseval, digits = 2))) + 
   annotate(geom="text", color = "red", x=max(dat$yp)/10, y=(max(dat$yp)/10), label=paste0("R2 =", round(rsq, digits = 2))) + 
   theme(aspect.ratio = 1) +
@@ -1410,8 +1482,230 @@ plot_list[[i]] <- ploty
 do.call(ggarrange, c(plot_list[1:length(plot_list)], common.legend = TRUE, legend = "bottom"))+ ggsave(filename= "Figures/FigureS_unconditional_outofsample_IATTC_US.jpg", plot=last_plot(), width = 30, height=25, units=c("cm"), dpi=500)
 ```
 
+###US only clustered
+Same as above but just the US fleet (theoretically this should be the same as hawaii so should do a good job)
+
+```{r}
+steps<- c("Albacore", "Bigeye Tuna", "Skipjack", "Yellowfin", " Blue Marlin", "Striped Marlin", "Sailfish", "Spearfish", "Swordfish")
+
+cdex <- c("ALBn", "BETn", "SKJn", "YFTn", "BUMn", "MLSn", "SFAn","SSPn","SWOn")
+
+plot_list = list()
+
+steps<- c("Albacore", "Bigeye Tuna", "Skipjack", "Yellowfin", " Blue Marlin", "Striped Marlin", "Sailfish", "Spearfish", "Swordfish")
+
+cdex <- c("ALBn", "BETn", "SKJn", "YFTn", "BUMn", "MLSn", "SFAn","SSPn","SWOn")
+
+plot_list = list()
 
 
+IATTC_dat <- cbind(IATTC_x, IATTC_y)
+
+
+xnames <- c("MIN.DEPTH","DEPTH.MEAN","DEPTH.RANGE","MAX.DEPTH","TEMP.0M","TEMP.EPI",
+            "OXY.0M","OXY.EPI","OXY.MESO","salinity.0000m.mean","surf.el.mean","water.temp.0000m.mean","aqua.CHL.chlor.a.mean")
+cdex <- c("BUMn", "MLSn", "SFAn", "SSPn", "SWOn", "ALBn", "BETn", "SKJn", "YFTn")
+
+IATTC_dat_US <- IATTC_dat %>% filter(Flag == "USA")
+
+
+IATTC_dat_US_x <-  IATTC_dat_US[,xnames]
+IATTC_dat_US_y <-  IATTC_dat_US[,cdex]
+
+
+
+xnames <- c(rownames(out[["parameters"]][["sensTable"]]))
+#aggregate
+cvar <- IATTC_dat_US_x[,xnames]
+minSize <- 10                   # experiment with sizes of clusters
+maxSize <- 20
+
+groups <- kmeansEqualGroups(cvar, minSize = minSize, maxSize = maxSize)
+xmean <- groups$clusterMeans
+xmean <- as.data.frame(xmean)
+xmean$cluster <- 1:nrow(xmean)
+clusters <- groups$cluster
+
+IATTC_dat_US_y$cluster <- clusters
+newdata <- left_join(IATTC_dat_US_y, xmean, by = "cluster")
+newy2 <- as.data.frame(newdata) %>% group_by(cluster) %>% summarise_at(cdex, mean, na.rm =T)
+newy2 <- newy2[,-1]
+
+
+
+for(i in 1:length(steps)){
+  name <- steps[i]
+  namey <- cdex[i]
+  yo = newy2[,namey]
+yp = p3$sdList$yMu[,namey]
+yp <- as.data.frame(yp)
+yp$Flag <- IATTC_dat$Flag
+yp <- yp %>% filter(Flag == "USA")
+yp$cluster <- clusters
+yp <- yp %>% group_by(cluster) %>% summarise(yp = mean(yp, na.rm =T))
+yp <- yp[,-1]
+dat <- cbind(yo, yp)
+dat <- as.data.frame(dat)
+colnames(dat) <- c("yo", "yp")
+
+
+ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "black")+
+  geom_abline(linetype=2) +  
+  theme_Publication() + 
+  xlim(c(0,max(dat$yp)))+ 
+  ylim(c(0,max(dat$yp))) + 
+  annotate(geom="text", color = "red", x=max(dat$yp)/10, y=max(dat$yp)/8, label=paste0("RMSPE =", round(rmseval, digits = 2))) + 
+  annotate(geom="text", color = "red", x=max(dat$yp)/10, y=(max(dat$yp)/10), label=paste0("R2 =", round(rsq, digits = 2))) + 
+  theme(aspect.ratio = 1) +
+  labs(y = expression(paste("Predicted catch (CPUE)")), x = expression(paste("Reported catch (CPUE)")),title=name)
+#ggsave(ploty, file=paste0("plot_", i,".jpg"), width = 10, height=10, units=c("cm"), dpi=500)
+plot_list[[i]] <- ploty
+}
+
+
+do.call(ggarrange, c(plot_list[1:length(plot_list)], common.legend = TRUE, legend = "bottom"))+ ggsave(filename= "Figures/FigureS_unconditional_outofsample_IATTC_US_clustered.jpg", plot=last_plot(), width = 30, height=25, units=c("cm"), dpi=500)
+```
+###Same extent
+Same as above but just the same lat and long)
+
+```{r}
+steps<- c("Albacore", "Bigeye Tuna", "Skipjack", "Yellowfin", " Blue Marlin", "Striped Marlin", "Sailfish", "Spearfish", "Swordfish")
+
+cdex <- c("ALBn", "BETn", "SKJn", "YFTn", "BUMn", "MLSn", "SFAn","SSPn","SWOn")
+
+plot_list = list()
+
+
+IATTC_dat <- cbind(IATTC_x, IATTC_y)
+IATTC_lat_lon <- IATTC_with_env_allyears %>% dplyr::select(RFMO_ID, LatC5, LonC5)
+
+IATTC_dat <- left_join(IATTC_dat, IATTC_lat_lon, by = c("RFMO_ID"))
+
+xnames <- c("MIN.DEPTH","DEPTH.MEAN","DEPTH.RANGE","MAX.DEPTH","TEMP.0M","TEMP.EPI",
+            "OXY.0M","OXY.EPI","OXY.MESO","salinity.0000m.mean","surf.el.mean","water.temp.0000m.mean","aqua.CHL.chlor.a.mean")
+cdex <- c("BUMn", "MLSn", "SFAn", "SSPn", "SWOn", "ALBn", "BETn", "SKJn", "YFTn")
+
+IATTC_dat_overlap <- IATTC_dat %>% filter(LatC5 > min(coords$LAT) & LatC5 < max(coords$LAT)& LonC5 > min(coords$LON) & LonC5 < max(coords$LON))
+
+
+IATTC_dat_overlap_x <-  IATTC_dat_overlap[,xnames]
+IATTC_dat_overlap_y <-  IATTC_dat_overlap[,cdex]
+
+for(i in 1:length(steps)){
+  name <- steps[i]
+  namey <- cdex[i]
+  yo = IATTC_y[,namey]
+yp = p3$sdList$yMu[,namey]
+yp <- as.data.frame(yp)
+yp$Lat <- IATTC_dat$LatC5
+yp$Lon <- IATTC_dat$LonC5
+yp <- yp %>% filter(Lat > min(coords$LAT) & Lat < max(coords$LAT)& Lon > min(coords$LON) & Lon < max(coords$LON))
+yp$cluster <- clusters
+yp <- yp %>% group_by(cluster) %>% summarise(yp = mean(yp, na.rm =T))
+yp <- yp[,-1]
+
+dat <- cbind(yo, yp)
+dat <- as.data.frame(dat)
+colnames(dat) <- c("yo", "yp")
+ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "black")+
+  geom_abline(linetype=2) +  
+  theme_Publication() + 
+  xlim(c(0,max(dat$yp)))+ 
+  ylim(c(0,max(dat$yp))) + 
+  theme(aspect.ratio = 1) +
+  labs(y = expression(paste("Predicted catch (CPUE)")), x = expression(paste("Reported catch (CPUE)")),title=name)
+#ggsave(ploty, file=paste0("plot_", i,".jpg"), width = 10, height=10, units=c("cm"), dpi=500)
+plot_list[[i]] <- ploty
+}
+
+
+do.call(ggarrange, c(plot_list[1:length(plot_list)], common.legend = TRUE, legend = "bottom"))+ ggsave(filename= "Figures/FigureS_unconditional_outofsample_IATTC_overlap.jpg", plot=last_plot(), width = 30, height=25, units=c("cm"), dpi=500)
+```
+###Same extent clustered
+Same as above but just the same lat and long)
+
+```{r}
+steps<- c("Albacore", "Bigeye Tuna", "Skipjack", "Yellowfin", " Blue Marlin", "Striped Marlin", "Sailfish", "Spearfish", "Swordfish")
+
+cdex <- c("ALBn", "BETn", "SKJn", "YFTn", "BUMn", "MLSn", "SFAn","SSPn","SWOn")
+
+plot_list = list()
+
+
+IATTC_dat <- cbind(IATTC_x, IATTC_y)
+IATTC_lat_lon <- IATTC_with_env_allyears %>% dplyr::select(RFMO_ID, LatC5, LonC5)
+
+IATTC_dat <- left_join(IATTC_dat, IATTC_lat_lon, by = c("RFMO_ID"))
+
+
+
+xnames <- c("MIN.DEPTH","DEPTH.MEAN","DEPTH.RANGE","MAX.DEPTH","TEMP.0M","TEMP.EPI",
+            "OXY.0M","OXY.EPI","OXY.MESO","salinity.0000m.mean","surf.el.mean","water.temp.0000m.mean","aqua.CHL.chlor.a.mean")
+cdex <- c("BUMn", "MLSn", "SFAn", "SSPn", "SWOn", "ALBn", "BETn", "SKJn", "YFTn")
+
+IATTC_dat_overlap <- IATTC_dat %>% filter(LatC5 > min(coords$LAT) & LatC5 < max(coords$LAT)& LonC5 > min(coords$LON) & LonC5 < max(coords$LON))
+
+
+IATTC_dat_overlap_x <-  IATTC_dat_overlap[,xnames]
+IATTC_dat_overlap_y <-  IATTC_dat_overlap[,cdex]
+
+
+
+xnames <- c(rownames(out[["parameters"]][["sensTable"]]))
+#aggregate
+cvar <- IATTC_dat_overlap_x[,xnames]
+minSize <- 10                   # experiment with sizes of clusters
+maxSize <- 20
+
+groups <- kmeansEqualGroups(cvar, minSize = minSize, maxSize = maxSize)
+xmean <- groups$clusterMeans
+xmean <- as.data.frame(xmean)
+xmean$cluster <- 1:nrow(xmean)
+clusters <- groups$cluster
+
+IATTC_dat_overlap_y$cluster <- clusters
+newdata <- left_join(IATTC_dat_overlap_y, xmean, by = "cluster")
+newy2 <- as.data.frame(newdata) %>% group_by(cluster) %>% summarise_at(cdex, mean, na.rm =T)
+newy2 <- newy2[,-1]
+
+for(i in 1:length(steps)){
+  name <- steps[i]
+  namey <- cdex[i]
+  yo = newy2[,namey]
+yp = p3$sdList$yMu[,namey]
+yp <- as.data.frame(yp)
+yp$Lat <- IATTC_dat$LatC5
+yp$Lon <- IATTC_dat$LonC5
+yp <- yp %>% filter(Lat > min(coords$LAT) & Lat < max(coords$LAT)& Lon > min(coords$LON) & Lon < max(coords$LON))
+yp$cluster <- clusters
+yp <- yp %>% group_by(cluster) %>% summarise(yp = mean(yp, na.rm =T))
+yp <- yp[,-1]
+
+dat <- cbind(yo, yp)
+dat <- as.data.frame(dat)
+colnames(dat) <- c("yo", "yp")
+rmseval <- Metrics::rmse(actual = dat$yo, predicted = dat$yp) #to put on the graph
+meany <- mean(dat$yo) #to put on the graph
+rss <- sum((dat$yp - dat$yo) ^ 2)  ## residual sum of squares
+tss <- sum((dat$yp - mean(dat$yo)) ^ 2)  ## total sum of squares
+rsq <- 1 - rss/tss
+
+ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "black")+
+  geom_abline(linetype=2) +  
+  theme_Publication() + 
+  xlim(c(0,max(dat$yp)))+ 
+  ylim(c(0,max(dat$yp))) + 
+  annotate(geom="text", color = "red", x=max(dat$yp)/10, y=max(dat$yp)/8, label=paste0("RMSPE =", round(rmseval, digits = 2))) + 
+  annotate(geom="text", color = "red", x=max(dat$yp)/10, y=(max(dat$yp)/10), label=paste0("R2 =", round(rsq, digits = 2))) + 
+  theme(aspect.ratio = 1) +
+  labs(y = expression(paste("Predicted catch (CPUE)")), x = expression(paste("Reported catch (CPUE)")),title=name)
+#ggsave(ploty, file=paste0("plot_", i,".jpg"), width = 10, height=10, units=c("cm"), dpi=500)
+plot_list[[i]] <- ploty
+}
+
+
+do.call(ggarrange, c(plot_list[1:length(plot_list)], common.legend = TRUE, legend = "bottom"))+ ggsave(filename= "Figures/FigureS_unconditional_outofsample_IATTC_overlap_clustered.jpg", plot=last_plot(), width = 30, height=25, units=c("cm"), dpi=500)
+```
 
 ##holdout
 ```{r}
@@ -1681,6 +1975,12 @@ load("Models/trained_hawaii_simp.rdata") #this is on original CPUE (G) and a sim
 load("Models/trained_hawaii_tempsalchlaoxy.rdata") #this is on original CPUE (G) and a simplified formula 
 # water.temp.0000m.mean + aqua.CHL.chlor.a.mean + salinity.0000m.mean + OXY.MESO
 
+load("Models/trained_hawaii_salchlamaxdepth.rdata") #this is on original CPUE (G) and a simplified formula. These are the variables that came out as important when I ran a model on hawaii and overlapping IATTC teleosts.  
+# water.temp.0000m.mean + aqua.CHL.chlor.a.mean + salinity.0000m.mean + OXY.MESO
+
+
+load("Models/overlap_full.rdata") #this is trained on hawaii and overlapping IATTC teleosts with all of the env. variables. Jim suggested looking at the inverse prediction for x to see which variables are important for prediction. It looks like chla, salinity, and maximum depth are most closesly back-predicted to the 1:1 line. 
+
 load("Models/trained_hawaii.rdata") #this is on original CPUE (G) and a simplified formula 
 # ~water.temp.0000m.mean + aqua.CHL.chlor.a.mean + OXY.MESO + salinity.0000m.mean + DEPTH.RANGE
 
@@ -1691,11 +1991,3 @@ load("Models/trained_hawaii_5x5_simp2.rdata")#this is my CPUE (5x5) and a simpli
 # ~water.temp.0000m.mean + aqua.CHL.chlor.a.mean + salinity.0000m.mean + OXY.MESO
 
 ```
-
-
-predicting for area that overlaped 
-
-new version of gjam. 
-- have to compile it. 
--species are being caught have shared traits that
--traits vignette 
