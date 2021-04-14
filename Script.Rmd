@@ -12,7 +12,7 @@ Overview:
 This code does the following 
 ANALYSIS: 
 1. Loads in Hawaii and IATTC catch data, converts to catch per hook. 
-2. Selects the best set of variables for predicting hawaii CPUE based on teh environment. 
+2. Selects the best set of variables for predicting hawaii CPUE based on the environment. 
 3. Trains a gjam model with the selected variables on 80% of hawaii, tests on the remaining 20%.
   - Out of sample conditional and unconditional prediction for sharks 
   - Out of sample unconditional prediction for target species (to test if the model works well)
@@ -271,66 +271,6 @@ gjamPlot(out, plotPars = plotPars) #jim said to look at inverse prediction
 load("Models/overlap_full.rdata")
 ```
 
-##set up train and test data
-```{r}
-###1.1.2 Split into Testing and Training Data
-
-smp_size <- floor(0.80 * nrow(IATTC_y))
-set.seed(118)
-train_ind <- sample(seq_len(nrow(IATTC_y)), size = smp_size)
-
-train <- haw_dat[train_ind, ] #Model Fitting
-test <- haw_dat[-train_ind, ] #For out of Sample data
-
-specNames <- c("ALBn", "BETn", "SKJn", "YFTn", "BUMn", "MLSn", "SFAn","SSPn","SWOn", "THRn", "BSHn", "OCSn", "MAKn", "FALn")
-
-xnames <- c("Month","Year","seamount.count","MIN.DEPTH","DEPTH.MEAN","DEPTH.RANGE","MAX.DEPTH","TEMP.0M","TEMP.EPI",
-            "OXY.0M","OXY.EPI","OXY.MESO","salinity.0000m.mean","surf.el.mean","water.temp.0000m.mean","aqua.CHL.chlor.a.mean")
-
-xdata <- train[,xnames] #Model Fitting Xdata
-xdata <- as.data.frame(xdata)
-xdata$Month <- as.factor(xdata$Month)
-
-
-xx <- test[,xnames]    # holdout for prediction
-xx$Month <- as.factor(xx$Month)
-
-#the way we name these things is killing me so I'm making names that make sense to me
-haw_train_x <- xdata 
-haw_test_x <- xx 
-
-ydata <- train[,specNames]
-yy <- test[,specNames]
-
-haw_train_y <- ydata 
-haw_test_y <- yy
-
-
-```
-
-##train model
-
-```{r}
-formula <- as.formula(~water.temp.0000m.mean*aqua.CHL.chlor.a.mean + OXY.MESO * 
-                        salinity.0000m.mean + aqua.CHL.chlor.a.mean * OXY.MESO +
-                        aqua.CHL.chlor.a.mean * DEPTH.RANGE + OXY.MESO*DEPTH.RANGE +
-                        water.temp.0000m.mean*salinity.0000m.mean + 
-                        salinity.0000m.mean*aqua.CHL.chlor.a.mean)
-
-formula <- as.formula(~water.temp.0000m.mean +aqua.CHL.chlor.a.mean + OXY.MESO + salinity.0000m.mean*aqua.CHL.chlor.a.mean + DEPTH.RANGE)
-
-cdex <- c("BUMn", "MLSn", "SFAn", "SSPn", "SWOn", "ALBn", "BETn", "SKJn", "YFTn") # Condition on market ctach             # condition on 2 species
-ndex <-  c("THRn", "BSHn", "OCSn", "MAKn", "FALn") # predict bycatch
-
-ml  <- list(ng = 200, burnin = 80, typeNames = 'CA')#, effort = effort)#, effort = effort) # fit the non-holdouts
-ml$REDUCT <- FALSE
-x <- model.matrix(formula, xdata)
-qr(x)$rank
-dim(x)
-
-out<- gjam(formula = formula, haw_train_x, haw_train_y, modelList = ml)
-save(out, file = "Models/trained_hawaii.rdata")
-```
 
 #3. Train Hawaii 
 ##set up train and test data
@@ -393,8 +333,8 @@ formula <- as.formula(~water.temp.0000m.mean +aqua.CHL.chlor.a.mean +
 formula <- as.formula(~water.temp.0000m.mean +aqua.CHL.chlor.a.mean + 
                         salinity.0000m.mean)
 
-formula <- as.formula(~water.temp.0000m.mean +aqua.CHL.chlor.a.mean + 
-                        salinity.0000m.mean)
+formula <- as.formula(~aqua.CHL.chlor.a.mean + 
+                        salinity.0000m.mean + MAX.DEPTH)
  
 
 cdex <- c("BUMn", "MLSn", "SFAn", "SSPn", "SWOn", "ALBn", "BETn", "SKJn", "YFTn") # Condition on market ctach             # condition on 2 species
@@ -407,8 +347,8 @@ qr(x)$rank
 dim(x)
 
 out<- gjam(formula = formula, haw_train_x, haw_train_y, modelList = ml)
-save(out, file = "Models/trained_hawaii_tempsalchlaoxy.rdata")
-load("Models/trained_hawaii_tempsalchlaoxy.rdata")
+save(out, file = "Models/trained_hawaii_salchlamaxdepth.rdata")
+load("Models/trained_hawaii_salchlamaxdepth.rdata")
 ```
 
 
