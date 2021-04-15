@@ -145,6 +145,9 @@ r2_general <-function(preds,actual){
   return(1- sum((preds - actual) ^ 2)/sum((actual - mean(actual))^2))
 }
 
+RMSE_func <- function(preds, actual){
+  return(sqrt(mean((actual - preds)^2)))
+         }
 
 ```
 #ANALYSIS
@@ -473,85 +476,92 @@ covars <- covars[-3]
 covars <- covars[-1]
 allformulas<- dredgeGJAM(covars, alwaysIn='aqua.CHL.chlor.a.mean + salinity.0000m.mean + DEPTH.MEAN')
 write.csv(allformulas, "Models/allformulas.csv")
-savestuff<- as.data.frame(matrix(NA, length(allformulas), 17))
+savestuff<- as.data.frame(matrix(NA, length(allformulas), 23))
 
-colnames(savestuff) = c("Formula", "DIC", "Model", "RMSE","BUMn", "MLSn", "SFAn", "SSPn", "SWOn", "ALBn", "BETn", "SKJn", "YFTn", "Non_R2_By", "R2_By","Non_R2_Total", "R2_Total")
+colnames(savestuff) = c("Formula", "DIC", "R2", "RMSE", "Mean_obs", "R2BUMn", "R2MLSn", "R2SFAn", "R2SSPn", "R2SWOn", "R2ALBn", "R2BETn", "R2SKJn", "R2YFTn", "RMSEBUMn", "RMSEMLSn", "RMSESFAn", "RMSESSPn", "RMSESWOn", "RMSEALBn", "RMSEBETn", "RMSESKJn", "RMSEYFTn")
+
 pb <- txtProgressBar(0, length(allformulas), style = 3)
-for(M in 1:length(allformulas)){
-    form <- as.formula(allformulas[[M]])
-    model    <- try(gjam(form, xdata, ydata, modelList = ml), T)
-    name <- form
-    ### Out of Sample Prediction Part
+### Out of Sample Prediction Part
     xtest <- test[,xnames]
     xtest <- as.data.frame(xtest)
     ytest <- test[,cdex]
     newdata <- list(xdata = xtest, nsim=500)
+    
+allformulas <- gsub(pattern = ":", replacement = "*", allformulas)
+    
+for(M in 1:length(allformulas)){
+    form <- allformulas[[M]]
+    model    <- gjam(form, xdata, ydata, modelList = ml)
+    name <- form
     out_of_sample_prediction_non_conditional <- gjamPredict(model, newdata = newdata)
     y_pred <- out_of_sample_prediction_non_conditional$sdList$yMu
-    y_obs <- ydata 
+    y_obs <- ytest 
+    y_pred_long <- as.data.frame(y_pred) %>% pivot_longer(cols = BUMn:YFTn, names_to = c("spec"))
+    y_obs_long <- as.data.frame(y_obs) %>% pivot_longer(cols = BUMn:YFTn, names_to = c("spec"))
+    
+    total <- cbind(y_pred_long$value, y_obs_long$value)
+    colnames(total) <- c("pred", "obs")
+    total <- as.data.frame(total)
 
     ###
     if(inherits(model, 'try-error'))next
-    
-    
     savestuff[M,1]<- allformulas[[M]]
     savestuff[M,2]<- model$fit$DIC
-    savestuff[M,3]<- name
-    savestuff[M,4]<- model$fit$rmspeAll
-    savestuff[M,5]<- model$fit$rmspeBySpec[1]
-    savestuff[M,6]<- model$fit$rmspeBySpec[2]
-    savestuff[M,7]<- model$fit$rmspeBySpec[3]
-    savestuff[M,8]<- model$fit$rmspeBySpec[4]
-    savestuff[M,9]<- model$fit$rmspeBySpec[5]
-    savestuff[M,10]<- model$fit$rmspeBySpec[6]
-    savestuff[M,11]<- model$fit$rmspeBySpec[7]
-    savestuff[M,12]<- model$fit$rmspeBySpec[8]
-    savestuff[M,13]<- model$fit$rmspeBySpec[9]
-    savestuff[M,14]<- model$fit$rmspeBySpec[10]
-    savestuff[M,15]<- model$fit$rmspeBySpec[11]
-    savestuff[M,16]<- model$fit$rmspeBySpec[12]
-    savestuff[M,17]<- model$fit$rmspeBySpec[13]
-    savestuff[M,18]<- model$fit$rmspeBySpec[14]
-    savestuff[M,19]<- model$fit$rmspeBySpec[15]
-    savestuff[M,20]<- model$fit$rmspeBySpec[16]
-    savestuff[M,21]<- model$fit$rmspeBySpec[17]
-    savestuff[M,22]<- model$fit$rmspeBySpec[18]
-    savestuff[M,23]<- model$fit$rmspeBySpec[19]
-    savestuff[M,24]<- model$fit$rmspeBySpec[20]
-    savestuff[M,25]<- model$fit$rmspeBySpec[21]
-    savestuff[M,26]<- model$fit$rmspeBySpec[22]
-    savestuff[M,27]<- model$fit$rmspeBySpec[23]
-    savestuff[M,28]<- format(summary(proj_non_con_lm)$adj.r.squared, digits=4)
-    savestuff[M,29]<- format(summary(proj_con_lm)$adj.r.squared, digits=4)
-    savestuff[M,30]<- format(summary(conditional_lm)$adj.r.squared, digits=4)
-    savestuff[M,31]<- format(summary(non_conditional_lm)$adj.r.squared, digits=4)
+    savestuff[M,3] <- r2_general(total$pred, total$obs)
+    savestuff[M,4] <- RMSE_func(actual = total$obs, pred = total$pred) 
+    savestuff[M,5] <- mean(total$obs)
+    savestuff[M,6] <- r2_general(y_pred[,1], y_obs[,1])
+    savestuff[M,7] <- r2_general(y_pred[,2], y_obs[,2])
+    savestuff[M,8] <- r2_general(y_pred[,3], y_obs[,3])
+    savestuff[M,9] <- r2_general(y_pred[,4], y_obs[,4])
+    savestuff[M,10] <- r2_general(y_pred[,5], y_obs[,5])
+    savestuff[M,11] <- r2_general(y_pred[,6], y_obs[,6])
+    savestuff[M,12] <- r2_general(y_pred[,7], y_obs[,7])
+    savestuff[M,13] <- r2_general(y_pred[,8], y_obs[,8])
+    savestuff[M,14] <- r2_general(y_pred[,9], y_obs[,9])
+    savestuff[M,15] <- RMSE_func(actual = y_obs[,1], pred = y_pred[,1]) 
+    savestuff[M,16] <- RMSE_func(actual = y_obs[,2], pred = y_pred[,2])
+    savestuff[M,17] <- RMSE_func(actual = y_obs[,3], pred = y_pred[,3])
+    savestuff[M,18] <- RMSE_func(actual = y_obs[,4], pred = y_pred[,4])
+    savestuff[M,19] <- RMSE_func(actual = y_obs[,5], pred = y_pred[,5])
+    savestuff[M,20] <- RMSE_func(actual = y_obs[,6], pred = y_pred[,6])
+    savestuff[M,21] <- RMSE_func(actual = y_obs[,7], pred = y_pred[,7])
+    savestuff[M,22] <- RMSE_func(actual = y_obs[,8], pred = y_pred[,8])
+    savestuff[M,23] <- RMSE_func(actual = y_obs[,9], pred = y_pred[,9])
     setTxtProgressBar(pb, M)
     Sys.sleep(time = 1)
- }
+}
+
+write.csv(savestuff, "modelruns.csv")
 ```
 
 ```{r}
   #rsquared 
-    # 2.1. Average of actual data
-avr_y_actual <- mean(as.numeric(as.matrix(observed[specnames[i]])))
+# 2.1. Average of actual data
+avr_y_actual <- mean(df$y_actual)
 
 # 2.2. Total sum of squares
-ss_total <- sum((observed[specnames[i]] - avr_y_actual)^2)
+ss_total <- sum((df$y_actual - avr_y_actual)^2)
 
 # 2.3. Regression sum of squares
-ss_regression <- sum((predicted[specnames[i]] - avr_y_actual)^2)
+ss_regression <- sum((df$y_predicted - avr_y_actual)^2)
 
 # 2.4. Residual sum of squares
-ss_residuals <- sum((predicted[specnames[i]] - observed[specnames[i]])^2)
+ss_residuals <- sum((df$y_actual - df$y_predicted)^2)
 
 # 3. R2 Score
-rsq <- 1 - (ss_residuals / ss_total)
+r2 <- 1 - ss_residuals / ss_total
 
 
 
 r2_general <-function(preds,actual){ 
   return(1- sum((preds - actual) ^ 2)/sum((actual - mean(actual))^2))
 }
+
+
+RMSE_func <- function(preds, actual){
+  return(sqrt(mean((actual - preds)^2)))
+         }
 
 ```
 
