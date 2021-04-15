@@ -141,6 +141,11 @@ dredgeGJAM<- function(covars, alwaysIn=''){
   return(myforms)
 }
 
+r2_general <-function(preds,actual){ 
+  return(1- sum((preds - actual) ^ 2)/sum((actual - mean(actual))^2))
+}
+
+
 ```
 #ANALYSIS
 #1. Data Prep 
@@ -423,7 +428,7 @@ IATTC_lat_lon <- IATTC_with_env_allyears %>% dplyr::select(RFMO_ID, LatC5, LonC5
 
 IATTC_dat <- left_join(IATTC_dat, IATTC_lat_lon, by = c("RFMO_ID"))
 
-xnames <- c("DEPTH.MEAN","MAX.DEPTH","TEMP.EPI",
+xnames <- c("DEPTH.MEAN",
             "OXY.MESO","salinity.0000m.mean","surf.el.mean","water.temp.0000m.mean","aqua.CHL.chlor.a.mean") #I'm taking out the different version of similar things (i.e min depth and depth range were not coming out as important in inverse pred, so just use depth.mean. just use temp.epi and oxy meso)
 cdex <- c("BUMn", "MLSn", "SFAn", "SSPn", "SWOn", "ALBn", "BETn", "SKJn", "YFTn")
 
@@ -463,9 +468,11 @@ ml$REDUCT <- TRUE
 inter <- model.matrix( ~.^2, data=xdata) 
 covars <- colnames(inter)
 covars <- covars[-1]
-covars <- covars[-8] #I;ll put chla in always in because I know its important 
-
-allformulas<- dredgeGJAM(covars, alwaysIn='aqua.CHL.chlor.a.mean')
+covars <- covars[-6] #I;ll put chla, salinity and depth.mean in always in because I know its important 
+covars <- covars[-3]
+covars <- covars[-1]
+allformulas<- dredgeGJAM(covars, alwaysIn='aqua.CHL.chlor.a.mean + salinity.0000m.mean + DEPTH.MEAN')
+write.csv(allformulas, "Models/allformulas.csv")
 savestuff<- as.data.frame(matrix(NA, length(allformulas), 17))
 
 colnames(savestuff) = c("Formula", "DIC", "Model", "RMSE","BUMn", "MLSn", "SFAn", "SSPn", "SWOn", "ALBn", "BETn", "SKJn", "YFTn", "Non_R2_By", "R2_By","Non_R2_Total", "R2_Total")
@@ -473,23 +480,20 @@ pb <- txtProgressBar(0, length(allformulas), style = 3)
 for(M in 1:length(allformulas)){
     form <- as.formula(allformulas[[M]])
     model    <- try(gjam(form, xdata, ydata, modelList = ml), T)
-    name <- paste('Model', M, sep="")
-    file <- paste('Model', M, '.Rdata', sep="")
-    save(model, file=file)
+    name <- form
     ### Out of Sample Prediction Part
     xtest <- test[,xnames]
     xtest <- as.data.frame(xtest)
     ytest <- test[,cdex]
-    S <- ncol(ytest)
     newdata <- list(xdata = xtest, nsim=500)
     out_of_sample_prediction_non_conditional <- gjamPredict(model, newdata = newdata)
-    non_conditional_lm <- lm(rowSums(out_of_sample_prediction_non_conditional$sdList$yMu) ~ rowSums(ycFinal))
-    proj_ByCatch_Con <- out_of_sample_prediction_conditional$sdList$yMu[,MarketRFMO]
-    proj_ByCatch_non_Con <- out_of_sample_prediction_non_conditional$sdList$yMu[,MarketRFMO]
-    proj_con_lm <- lm(rowSums(proj_ByCatch_Con) ~ rowSums(ycByCatch))
-    proj_non_con_lm <- lm(rowSums(proj_ByCatch_non_Con) ~ rowSums(ycByCatch))
+    y_pred <- out_of_sample_prediction_non_conditional$sdList$yMu
+    y_obs <- ydata 
+
     ###
     if(inherits(model, 'try-error'))next
+    
+    
     savestuff[M,1]<- allformulas[[M]]
     savestuff[M,2]<- model$fit$DIC
     savestuff[M,3]<- name
@@ -542,6 +546,12 @@ ss_residuals <- sum((predicted[specnames[i]] - observed[specnames[i]])^2)
 
 # 3. R2 Score
 rsq <- 1 - (ss_residuals / ss_total)
+
+
+
+r2_general <-function(preds,actual){ 
+  return(1- sum((preds - actual) ^ 2)/sum((actual - mean(actual))^2))
+}
 
 ```
 
