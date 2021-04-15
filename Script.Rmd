@@ -50,6 +50,7 @@ devtools::install_github("kassambara/ggcorrplot", force = TRUE)
 library(ggcorrplot)#for gjam output figures
 library(corrplot)#for gjam output figures
 library(lessR)#for gjam output figures
+library(gtools)
 ```
 
 ##Functions
@@ -119,6 +120,26 @@ kmeansEqualGroups <- function(cvar,minSize,maxSize,progress=T){
 }
 
 
+
+
+pastePerm<- function(row, names){
+  keep<- which(row==1)
+  if(length(keep)==0){
+    return('1')
+  }else{
+    return(paste(names[keep],collapse='+'))
+  }
+}
+dredgeGJAM<- function(covars, alwaysIn=''){
+  p<- length(covars)
+  perm.tab<- permutations(2, p, v=c(0,1), repeats.allowed=T)
+  myforms<- NULL
+  for(j in 1:nrow(perm.tab)){
+    myforms[j]<- pastePerm(perm.tab[j,], covars)
+  }
+  myforms<- paste0('~', alwaysIn,'+', myforms)
+  return(myforms)
+}
 
 ```
 #ANALYSIS
@@ -382,13 +403,128 @@ load("Models/above0_full.rdata")
 ```
 
 
-##selection loop
+##Dredge selection loop
 Use the overlapping hawaii and IATTC teleost species dataset created above (overlap_y and overlap_x. 
 Use 70% of the data. 
 Run the models on all combinations of variables. 
 Predict on the remaining 30% 
 Calculate RMSE and Rsquared for each species and the total dataset. 
 
+```{r}
+#test to remember how dredgeGJAM works 
+covars<- c('A','B','C','A:B')
+allformulas<- dredgeGJAM(covars)
+allformulas<- dredgeGJAM(covars, alwaysIn='E+F+G')
+
+
+#set up train and test data 
+IATTC_dat <- cbind(IATTC_x, IATTC_y)
+IATTC_lat_lon <- IATTC_with_env_allyears %>% dplyr::select(RFMO_ID, LatC5, LonC5)
+
+IATTC_dat <- left_join(IATTC_dat, IATTC_lat_lon, by = c("RFMO_ID"))
+
+xnames <- c("DEPTH.MEAN","MAX.DEPTH","TEMP.EPI",
+            "OXY.MESO","salinity.0000m.mean","surf.el.mean","water.temp.0000m.mean","aqua.CHL.chlor.a.mean") #I'm taking out the different version of similar things (i.e min depth and depth range were not coming out as important in inverse pred, so just use depth.mean. just use temp.epi and oxy meso)
+cdex <- c("BUMn", "MLSn", "SFAn", "SSPn", "SWOn", "ALBn", "BETn", "SKJn", "YFTn")
+
+IATTC_dat_overlap <- IATTC_dat %>% filter(LatC5 > min(coords$LAT) & LatC5 < max(coords$LAT)& LonC5 > min(coords$LON) & LonC5 < max(coords$LON))
+
+
+IATTC_dat_overlap_x <-  IATTC_dat_overlap[,xnames]
+IATTC_dat_overlap_y <-  IATTC_dat_overlap[,cdex]
+
+haw_overlap_x <-  haw_x[,xnames]
+haw_overlap_y <-  haw_y[,cdex]
+
+overlap_y <- rbind(IATTC_dat_overlap_y, haw_overlap_y)
+overlap_x <- rbind(IATTC_dat_overlap_x, haw_overlap_x)
+
+overlap_all <- cbind(overlap_x, overlap_y)
+
+smp_size <- floor(0.70 * nrow(overlap_all))
+set.seed(123)
+train_ind <- sample(seq_len(nrow(overlap_all)), size = smp_size)
+train <- overlap_all[train_ind, ]
+test <- overlap_all[-train_ind, ]
+
+
+xdata <- train[,xnames]
+xdata <- as.data.frame(xdata)
+ydata <- train[,cdex]
+S <- ncol(ydata)
+typeNames <- rep("DA", S)
+ml <- list(ng = 100, burnin = 40, typeNames = typeNames)
+ml$REDUCT <- TRUE
+#Covars are the parameters which are not in the base and which we want to iterate
+#Always-in are the base parameters we know we want to include. Salinity chla and depth meancame out as important in inverse pred x. 
+#This reduces the number of iterations in the for loop
+
+#find all possible interactions and variables
+inter <- model.matrix( ~.^2, data=xdata) 
+covars <- colnames(inter)
+covars <- covars[-1]
+covars <- covars[-8] #I;ll put chla in always in because I know its important 
+
+allformulas<- dredgeGJAM(covars, alwaysIn='aqua.CHL.chlor.a.mean')
+savestuff<- as.data.frame(matrix(NA, length(allformulas), 17))
+
+colnames(savestuff) = c("Formula", "DIC", "Model", "RMSE","BUMn", "MLSn", "SFAn", "SSPn", "SWOn", "ALBn", "BETn", "SKJn", "YFTn", "Non_R2_By", "R2_By","Non_R2_Total", "R2_Total")
+pb <- txtProgressBar(0, length(allformulas), style = 3)
+for(M in 1:length(allformulas)){
+    form <- as.formula(allformulas[[M]])
+    model    <- try(gjam(form, xdata, ydata, modelList = ml), T)
+    name <- paste('Model', M, sep="")
+    file <- paste('Model', M, '.Rdata', sep="")
+    save(model, file=file)
+    ### Out of Sample Prediction Part
+    xtest <- test[,xnames]
+    xtest <- as.data.frame(xtest)
+    ytest <- test[,cdex]
+    S <- ncol(ytest)
+    newdata <- list(xdata = xtest, nsim=500)
+    out_of_sample_prediction_non_conditional <- gjamPredict(model, newdata = newdata)
+    non_conditional_lm <- lm(rowSums(out_of_sample_prediction_non_conditional$sdList$yMu) ~ rowSums(ycFinal))
+    proj_ByCatch_Con <- out_of_sample_prediction_conditional$sdList$yMu[,MarketRFMO]
+    proj_ByCatch_non_Con <- out_of_sample_prediction_non_conditional$sdList$yMu[,MarketRFMO]
+    proj_con_lm <- lm(rowSums(proj_ByCatch_Con) ~ rowSums(ycByCatch))
+    proj_non_con_lm <- lm(rowSums(proj_ByCatch_non_Con) ~ rowSums(ycByCatch))
+    ###
+    if(inherits(model, 'try-error'))next
+    savestuff[M,1]<- allformulas[[M]]
+    savestuff[M,2]<- model$fit$DIC
+    savestuff[M,3]<- name
+    savestuff[M,4]<- model$fit$rmspeAll
+    savestuff[M,5]<- model$fit$rmspeBySpec[1]
+    savestuff[M,6]<- model$fit$rmspeBySpec[2]
+    savestuff[M,7]<- model$fit$rmspeBySpec[3]
+    savestuff[M,8]<- model$fit$rmspeBySpec[4]
+    savestuff[M,9]<- model$fit$rmspeBySpec[5]
+    savestuff[M,10]<- model$fit$rmspeBySpec[6]
+    savestuff[M,11]<- model$fit$rmspeBySpec[7]
+    savestuff[M,12]<- model$fit$rmspeBySpec[8]
+    savestuff[M,13]<- model$fit$rmspeBySpec[9]
+    savestuff[M,14]<- model$fit$rmspeBySpec[10]
+    savestuff[M,15]<- model$fit$rmspeBySpec[11]
+    savestuff[M,16]<- model$fit$rmspeBySpec[12]
+    savestuff[M,17]<- model$fit$rmspeBySpec[13]
+    savestuff[M,18]<- model$fit$rmspeBySpec[14]
+    savestuff[M,19]<- model$fit$rmspeBySpec[15]
+    savestuff[M,20]<- model$fit$rmspeBySpec[16]
+    savestuff[M,21]<- model$fit$rmspeBySpec[17]
+    savestuff[M,22]<- model$fit$rmspeBySpec[18]
+    savestuff[M,23]<- model$fit$rmspeBySpec[19]
+    savestuff[M,24]<- model$fit$rmspeBySpec[20]
+    savestuff[M,25]<- model$fit$rmspeBySpec[21]
+    savestuff[M,26]<- model$fit$rmspeBySpec[22]
+    savestuff[M,27]<- model$fit$rmspeBySpec[23]
+    savestuff[M,28]<- format(summary(proj_non_con_lm)$adj.r.squared, digits=4)
+    savestuff[M,29]<- format(summary(proj_con_lm)$adj.r.squared, digits=4)
+    savestuff[M,30]<- format(summary(conditional_lm)$adj.r.squared, digits=4)
+    savestuff[M,31]<- format(summary(non_conditional_lm)$adj.r.squared, digits=4)
+    setTxtProgressBar(pb, M)
+    Sys.sleep(time = 1)
+ }
+```
 
 ```{r}
   #rsquared 
@@ -1772,6 +1908,144 @@ plot_list[[i]] <- ploty
 
 do.call(ggarrange, c(plot_list[1:length(plot_list)], common.legend = TRUE, legend = "bottom"))+ ggsave(filename= "Figures/FigureS_unconditional_outofsample_IATTC_overlap_clustered.jpg", plot=last_plot(), width = 30, height=25, units=c("cm"), dpi=500)
 ```
+
+
+
+###Above 0 lat
+Same as above but just the same lat and long)
+
+```{r}
+steps<- c("Albacore", "Bigeye Tuna", "Skipjack", "Yellowfin", " Blue Marlin", "Striped Marlin", "Sailfish", "Spearfish", "Swordfish")
+
+cdex <- c("ALBn", "BETn", "SKJn", "YFTn", "BUMn", "MLSn", "SFAn","SSPn","SWOn")
+
+plot_list = list()
+
+
+IATTC_dat <- cbind(IATTC_x, IATTC_y)
+IATTC_lat_lon <- IATTC_with_env_allyears %>% dplyr::select(RFMO_ID, LatC5, LonC5)
+
+IATTC_dat <- left_join(IATTC_dat, IATTC_lat_lon, by = c("RFMO_ID"))
+
+xnames <- c("MIN.DEPTH","DEPTH.MEAN","DEPTH.RANGE","MAX.DEPTH","TEMP.0M","TEMP.EPI",
+            "OXY.0M","OXY.EPI","OXY.MESO","salinity.0000m.mean","surf.el.mean","water.temp.0000m.mean","aqua.CHL.chlor.a.mean")
+cdex <- c("BUMn", "MLSn", "SFAn", "SSPn", "SWOn", "ALBn", "BETn", "SKJn", "YFTn")
+
+IATTC_dat_0 <- IATTC_dat %>% filter(LatC5 > 0)
+
+
+IATTC_dat_0_x <-  IATTC_dat_0[,xnames]
+IATTC_dat_0_y <-  IATTC_dat_0[,cdex]
+
+for(i in 1:length(steps)){
+  name <- steps[i]
+  namey <- cdex[i]
+  yo = IATTC_dat_0_y[,namey]
+yp = p3$sdList$yMu[,namey]
+yp <- as.data.frame(yp)
+yp$Lat <- IATTC_dat$LatC5
+yp <- yp %>% filter(Lat > 0)
+dat <- cbind(yo, yp)
+dat <- as.data.frame(dat)
+colnames(dat) <- c("yo", "yp")
+ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "black")+
+  geom_abline(linetype=2) +  
+  theme_Publication() + 
+  xlim(c(0,max(dat$yp)))+ 
+  ylim(c(0,max(dat$yp))) + 
+  theme(aspect.ratio = 1) +
+  labs(y = expression(paste("Predicted catch (CPUE)")), x = expression(paste("Reported catch (CPUE)")),title=name)
+#ggsave(ploty, file=paste0("plot_", i,".jpg"), width = 10, height=10, units=c("cm"), dpi=500)
+plot_list[[i]] <- ploty
+}
+
+
+do.call(ggarrange, c(plot_list[1:length(plot_list)], common.legend = TRUE, legend = "bottom"))+ ggsave(filename= "Figures/FigureS_unconditional_outofsample_IATTC_above0.jpg", plot=last_plot(), width = 30, height=25, units=c("cm"), dpi=500)
+```
+###Above0 clustered
+Same as above but just the same lat and long)
+
+```{r}
+steps<- c("Albacore", "Bigeye Tuna", "Skipjack", "Yellowfin", " Blue Marlin", "Striped Marlin", "Sailfish", "Spearfish", "Swordfish")
+
+cdex <- c("ALBn", "BETn", "SKJn", "YFTn", "BUMn", "MLSn", "SFAn","SSPn","SWOn")
+
+plot_list = list()
+
+
+IATTC_dat <- cbind(IATTC_x, IATTC_y)
+IATTC_lat_lon <- IATTC_with_env_allyears %>% dplyr::select(RFMO_ID, LatC5, LonC5)
+
+IATTC_dat <- left_join(IATTC_dat, IATTC_lat_lon, by = c("RFMO_ID"))
+
+xnames <- c("MIN.DEPTH","DEPTH.MEAN","DEPTH.RANGE","MAX.DEPTH","TEMP.0M","TEMP.EPI",
+            "OXY.0M","OXY.EPI","OXY.MESO","salinity.0000m.mean","surf.el.mean","water.temp.0000m.mean","aqua.CHL.chlor.a.mean")
+cdex <- c("BUMn", "MLSn", "SFAn", "SSPn", "SWOn", "ALBn", "BETn", "SKJn", "YFTn")
+
+IATTC_dat_0 <- IATTC_dat %>% filter(LatC5 > 0)
+
+
+IATTC_dat_0_x <-  IATTC_dat_0[,xnames]
+IATTC_dat_0_y <-  IATTC_dat_0[,cdex]
+
+
+
+xnames <- c(rownames(out[["parameters"]][["sensTable"]]))
+#aggregate
+cvar <- IATTC_dat_0_x[,xnames]
+minSize <- 10                   # experiment with sizes of clusters
+maxSize <- 20
+
+groups <- kmeansEqualGroups(cvar, minSize = minSize, maxSize = maxSize)
+xmean <- groups$clusterMeans
+xmean <- as.data.frame(xmean)
+xmean$cluster <- 1:nrow(xmean)
+clusters <- groups$cluster
+
+IATTC_dat_0_y$cluster <- clusters
+newdata <- left_join(IATTC_dat_0_y, xmean, by = "cluster")
+newy2 <- as.data.frame(newdata) %>% group_by(cluster) %>% summarise_at(cdex, mean, na.rm =T)
+newy2 <- newy2[,-1]
+
+for(i in 1:length(steps)){
+  name <- steps[i]
+  namey <- cdex[i]
+  yo = newy2[,namey]
+yp = p3$sdList$yMu[,namey]
+yp <- as.data.frame(yp)
+yp$Lat <- IATTC_dat$LatC5
+yp <- yp %>% filter(Lat > 0)
+yp$cluster <- clusters
+yp <- yp %>% group_by(cluster) %>% summarise(yp = mean(yp, na.rm =T))
+yp <- yp[,-1]
+
+dat <- cbind(yo, yp)
+dat <- as.data.frame(dat)
+colnames(dat) <- c("yo", "yp")
+rmseval <- Metrics::rmse(actual = dat$yo, predicted = dat$yp) #to put on the graph
+meany <- mean(dat$yo) #to put on the graph
+rss <- sum((dat$yp - dat$yo) ^ 2)  ## residual sum of squares
+tss <- sum((dat$yp - mean(dat$yo)) ^ 2)  ## total sum of squares
+rsq <- 1 - rss/tss
+
+ploty <- ggplot()  + geom_point(data = dat, aes(x = yo,y = yp), size = .2, color = "black")+
+  geom_abline(linetype=2) +  
+  theme_Publication() + 
+  xlim(c(0,max(dat$yp)))+ 
+  ylim(c(0,max(dat$yp))) + 
+  annotate(geom="text", color = "red", x=max(dat$yp)/10, y=max(dat$yp)/8, label=paste0("RMSPE =", round(rmseval, digits = 2))) + 
+  annotate(geom="text", color = "red", x=max(dat$yp)/10, y=(max(dat$yp)/10), label=paste0("R2 =", round(rsq, digits = 2))) + 
+  theme(aspect.ratio = 1) +
+  labs(y = expression(paste("Predicted catch (CPUE)")), x = expression(paste("Reported catch (CPUE)")),title=name)
+#ggsave(ploty, file=paste0("plot_", i,".jpg"), width = 10, height=10, units=c("cm"), dpi=500)
+plot_list[[i]] <- ploty
+}
+
+
+do.call(ggarrange, c(plot_list[1:length(plot_list)], common.legend = TRUE, legend = "bottom"))+ ggsave(filename= "Figures/FigureS_unconditional_outofsample_IATTC_above0_clustered.jpg", plot=last_plot(), width = 30, height=25, units=c("cm"), dpi=500)
+```
+
+
 
 ##holdout
 ```{r}
