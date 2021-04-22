@@ -460,7 +460,7 @@ xdata <- train[,xnames]
 xdata <- as.data.frame(xdata)
 ydata <- train[,cdex]
 S <- ncol(ydata)
-typeNames <- rep("DA", S)
+typeNames <- rep("CA", S)
 ml <- list(ng = 100, burnin = 40, typeNames = typeNames)
 ml$REDUCT <- TRUE
 #Covars are the parameters which are not in the base and which we want to iterate
