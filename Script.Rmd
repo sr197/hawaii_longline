@@ -270,27 +270,12 @@ haw_dat <- cbind(haw_y, haw_x )
 
 ```{r}
 
-IATTC_shark <- read.csv("Data/Raw/PublicLLSharkNum_2004_2018.csv", na.strings=c(-9999, -9999), header = TRUE, sep = ",")
-IATTC_target <- read.csv("Data/Raw/PublicLLTunaBillfishNum_2004_2018.csv", na.strings=c(-9999, -9999), header = TRUE, sep = ",")
 
-
-
-joined <- left_join(IATTC_target, IATTC_shark, by = c("Year", "Month", "Flag", "LatC5", "LonC5"))
-
-##whenever there is NA in sharks I guess we make it 0 because none were reported 
-
-#test to see if the same as data I have 
-
-IATTC_with_env_allyears <- read.csv("Data/Raw/IATTC_with_env_allyears.csv")
-
-#joined_2 <- left_join(joined, IATTC_with_env_allyears, by = c("Year", "Month", "Flag", "LatC5", "LonC5"))
-
-
-#this just showed me that IATTC_with_env_allyears and IATTC are the correct original catch data so we will use that 
 specNames <- c("ALBn", "BETn", "SKJn", "YFTn", "BUMn", "MLSn", "SFAn","SSPn","SWOn", "THRn", "BSHn", "OCSn", "MAKn", "FALn")
 
 xnames <- c("Month","Year","Flag", "RFMO_ID", "DEPTH.RANGE",
             "OXY.MESO","salinity.0000m.mean","surf.el.mean","water.temp.0000m.mean","aqua.CHL.chlor.a.mean")
+
 
 
 #there are some x values missing. we need to add those back in based on IATTC 
@@ -324,7 +309,8 @@ xnames <- c("Month", "Year", "Flag", "RFMO_ID", "MIN.DEPTH","DEPTH.MEAN","DEPTH.
 IATTC_y <- IATTC_tot[,specNames]
 IATTC_x <- IATTC_tot[,xnames]
 
-#checkit - I think I need to get RFMO_ID and flag in here too. 
+IATTC_with_env_allyears <- read.csv("Data/Raw/IATTC_with_env_allyears.csv") # use this later for lat long
+
 ```
 
 #2. Variable selection 
