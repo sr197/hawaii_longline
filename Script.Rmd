@@ -521,36 +521,6 @@ for(M in 1:length(allformulas)){
 write.csv(savestuff, "modelruns.csv")
 ```
 
-```{r}
-  #rsquared 
-# 2.1. Average of actual data
-avr_y_actual <- mean(df$y_actual)
-
-# 2.2. Total sum of squares
-ss_total <- sum((df$y_actual - avr_y_actual)^2)
-
-# 2.3. Regression sum of squares
-ss_regression <- sum((df$y_predicted - avr_y_actual)^2)
-
-# 2.4. Residual sum of squares
-ss_residuals <- sum((df$y_actual - df$y_predicted)^2)
-
-# 3. R2 Score
-r2 <- 1 - ss_residuals / ss_total
-
-
-
-r2_general <-function(preds,actual){ 
-  return(1- sum((preds - actual) ^ 2)/sum((actual - mean(actual))^2))
-}
-
-
-RMSE_func <- function(preds, actual){
-  return(sqrt(mean((actual - preds)^2)))
-         }
-
-```
-
 #3. Train Hawaii 
 ##set up train and test data
 ```{r}
@@ -687,6 +657,7 @@ save(out, file = "Models/full_hawaii.rdata")
 
 #5. Predict IATTC unconditional all data 
 This is a test to see how well the model fits on the IATTC data 
+THis should be done on the overlapping data. We can test it on the whole data as well, but it might not perform well. 
 ```{r}
 #predict unconditionally, out-of-sample IATTC
 #testing with 1000 
